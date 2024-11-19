@@ -12,10 +12,20 @@ The bot demonstrates advanced skills in computer vision, automation, and multi-t
 
 ## Object Detection Models
 All of the data and models were labeled and trained using roboflow. The projects are completely open and available for anyone to use.  
+
+
 Main "everything" model https://universe.roboflow.com/albion-edu-workspace/albion_detector-l4o1a
+
+
 Obstacle Instance model https://universe.roboflow.com/albion-edu-workspace/obstacle_instance_detection
+
+
 Spell Detector model https://universe.roboflow.com/albiondetector/spell_detector
+
+
 Loading Bar model https://universe.roboflow.com/albion-edu-workspace/loading_bar
+
+
 Low Health model https://universe.roboflow.com/albion-edu-workspace/low_detector
 
 ## Features
