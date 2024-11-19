@@ -5,6 +5,10 @@ This project is a fully automated game bot developed for Albion Online, built us
 
 The bot demonstrates advanced skills in computer vision, automation, and multi-threaded programming, and serves as an excellent showcase of my capabilities as a developer.
 
+## Video Fotage
+
+www.youtube.com
+
 ## Features
 #### Object Detection: 
 Utilizes YOLOv11 for detecting various game objects such as mobs, farmable resources, and player characters.
