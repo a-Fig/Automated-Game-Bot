@@ -5,7 +5,7 @@ This project is a fully automated game bot developed for Albion Online, built us
 
 The bot demonstrates advanced skills in computer vision, automation, and multi-threaded programming, and serves as an excellent showcase of my capabilities as a developer.
 
-## Video Fotage
+## Video Footage
 
 ### [www.youtube.com/showcase1](https://youtu.be/R9eL22sFTKY)
 ### [www.youtube.com/showcase2](https://youtu.be/_WJ6Z3qbqEo)
