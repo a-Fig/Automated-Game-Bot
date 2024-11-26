@@ -53,3 +53,9 @@ For automating keyboard and mouse inputs.
 For detecting hotkey inputs to trigger actions such as taking screenshots.
 #### Multiprocessing:
 For managing multiple threads to handle different tasks concurrently.
+
+## Setup
+### Simple
+You can download the pre-compiled binary from my google drive 
+https://drive.google.com/drive/folders/1cSoGCpN0hpp1aY5-MlTe3TlO-C0Nj1lT?usp=sharing 
+
