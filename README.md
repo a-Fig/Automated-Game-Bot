@@ -10,24 +10,6 @@ The bot demonstrates advanced skills in computer vision, automation, and multi-t
 ### [www.youtube.com/showcase1](https://youtu.be/R9eL22sFTKY)
 ### [www.youtube.com/showcase2](https://youtu.be/_WJ6Z3qbqEo)
 
-## Object Detection Models
-All of the data and models were labeled and trained using roboflow. The projects are completely open and available for anyone to use.  
-
-
-Main "everything" model https://universe.roboflow.com/albion-edu-workspace/albion_detector-l4o1a
-
-
-Obstacle Instance model https://universe.roboflow.com/albion-edu-workspace/obstacle_instance_detection
-
-
-Spell Detector model https://universe.roboflow.com/albiondetector/spell_detector
-
-
-Loading Bar model https://universe.roboflow.com/albion-edu-workspace/loading_bar
-
-
-Low Health model https://universe.roboflow.com/albion-edu-workspace/low_detector
-
 ## Features
 #### Object Detection: 
 Utilizes YOLOv11 for detecting various game objects such as mobs, farmable resources, and player characters.
@@ -53,6 +35,24 @@ For automating keyboard and mouse inputs.
 For detecting hotkey inputs to trigger actions such as taking screenshots.
 #### Multiprocessing:
 For managing multiple threads to handle different tasks concurrently.
+
+## Object Detection Models
+All of the data and models were labeled and trained using roboflow. The projects are completely open and available for anyone to use.  
+
+
+Main "everything" model https://universe.roboflow.com/albion-edu-workspace/albion_detector-l4o1a
+
+
+Obstacle Instance model https://universe.roboflow.com/albion-edu-workspace/obstacle_instance_detection
+
+
+Spell Detector model https://universe.roboflow.com/albiondetector/spell_detector
+
+
+Loading Bar model https://universe.roboflow.com/albion-edu-workspace/loading_bar
+
+
+Low Health model https://universe.roboflow.com/albion-edu-workspace/low_detector
 
 ## Setup
 ### Simple
