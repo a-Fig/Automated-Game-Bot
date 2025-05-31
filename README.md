@@ -7,7 +7,7 @@ The bot demonstrates advanced skills in computer vision, automation, and multi-t
 
 ## Video Footage
 
-### [www.youtube.com/showcase1](https://youtu.be/R9eL22sFTKY)
+### [www.youtube.com/showcase1](https://youtu.be/l8Mt02X6kl4?si=cX0gRKamCZWMFoFF)
 ### [www.youtube.com/showcase2](https://youtu.be/_WJ6Z3qbqEo)
 
 ## Features
