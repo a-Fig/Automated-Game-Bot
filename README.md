@@ -1,6 +1,6 @@
 # Automated Albion Online Bot
 ## Overview
-This project is a fully automated game bot developed for Albion Online, built using Python. The bot is designed to perform various in-game tasks autonomously by utilizing object detection, multi-threading, and image processing to scan the game environment, interact with objects, and perform actions such as farming, fighting, and peace mode activation.
+This project is a fully automated game bot developed for Albion Online, built using Python. The bot is designed to perform various in-game tasks autonomously by utilizing object detection, multi-threading, and image processing to scan the game environment, interact with objects, and perform actions such as farming, and fighting mobs.
 
 
 The bot demonstrates advanced skills in computer vision, automation, and multi-threaded programming, and serves as an excellent showcase of my capabilities as a developer.
