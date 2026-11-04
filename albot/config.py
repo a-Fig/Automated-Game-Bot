@@ -157,6 +157,12 @@ class HealthConfig:
 
 @dataclass
 class SafetyConfig:
+    zone_guard: bool = True
+    zone_label_rect: tuple[int, int, int, int] = (1960, 1365, 2160, 1395)
+    zone_label_size: tuple[int, int] = (2240, 1400)  # calibration size; rect scales with captures
+    zone_label_threshold: float = 15.0
+    zone_label_seconds: float = 2.0
+    zone_loading_mean: float = 15.0
     death_limit: int = 2
     death_window_seconds: float = 1800.0
     zero_health: float = 0.01
@@ -272,7 +278,8 @@ def _build(cls, data: dict[str, Any], path: str):
         elif name == "fallback":
             value = CastStep(**value)
         elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar", "gather_bar",
-                                                  "minimap_rect", "player_screen", "safe_screen_rect"):
+                                                  "minimap_rect", "player_screen", "safe_screen_rect",
+                                                  "zone_label_rect", "zone_label_size"):
             value = tuple(value)
         kwargs[name] = value
     return cls(**kwargs)

@@ -31,6 +31,9 @@ calibration, visited.json and runtime arrow fixes remain unchanged.
   planning mask for a reproducible audit. These files are not used at runtime.
 - `zone.json`: corrected portal positions, locator polygon and Tab transform.
   Its clearance default is 1.0; an explicit navigation.clearance overrides it.
+  `exit_no_go` adds 8px buffers around the four yellow signposts and their inner
+  approaches, including the live NW return fix (186.0,96.8). `exit_projection`
+  stores the measured long-walk matrix for exit checks only, at 2240x1400.
 - `override.png`: neutral grey. The old override mixed misregistered road colours
   with live visited discs and could reopen cliffs. Keep visited.json as evidence,
   not an instruction to paint every nearby cell open. Override support remains:

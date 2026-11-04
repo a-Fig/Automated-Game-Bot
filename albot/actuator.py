@@ -33,6 +33,16 @@ class Input:
         if not self.window.is_active():
             raise FocusLost()
 
+    def release(self) -> None:
+        """Release only controls the bot uses; key-up must also work after focus loss."""
+        import keyboard
+        import pyautogui
+        for key in dict.fromkeys([*self.keys.slots, self.keys.attack_after_click, self.keys.stop,
+                                  self.keys.food, self.keys.close_menus]):
+            keyboard.release(key)
+        for button in dict.fromkeys(("left", self.keys.move_button)):
+            pyautogui.mouseUp(button=button)
+
     def _to_screen(self, p: Point) -> tuple[int, int]:
         r = self.window.rect()
         return int(r.left + p.x), int(r.top + p.y)
@@ -78,6 +88,9 @@ class Input:
 class DryRunInput:
     """Logs what would be pressed and clicked, and sends nothing. For testing."""
     actions: list[tuple] = field(default_factory=list)
+
+    def release(self) -> None:
+        self.actions.append(("release",))
 
     def press(self, key: str) -> None:
         self.actions.append(("press", key))

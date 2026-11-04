@@ -64,7 +64,8 @@ def pick_target(ctx, scene: Scene, items: Sequence[Detection], behavior: str, ve
     skipped for a while (see Blacklist).
     """
     candidates = [d for d in items if not ctx.blacklist.blocked(d.center)
-                  and (behavior != "farm" or not ctx.resources.blocked(scene, d))]
+                  and (behavior != "farm" or not ctx.resources.blocked(scene, d))
+                  and ctx.movement_allowed(d.center)]
     for d in candidates:
         if scene.reachable(d.center):
             return Plan(behavior, f"{verb} {d.class_name}", target=d)
@@ -72,7 +73,7 @@ def pick_target(ctx, scene: Scene, items: Sequence[Detection], behavior: str, ve
     if b.detours and scene.obstacles:
         for d in candidates[:3]:
             w = find_detour(scene.player, d.center, scene.obstacles, b.detour_margin, scene.window_size)
-            if w is not None:
+            if w is not None and ctx.movement_allowed(w):
                 return Plan(behavior, f"detour to {verb} {d.class_name}", target=d, waypoint=w)
     return None
 
@@ -267,6 +268,10 @@ class Travel(Behavior):
             ctx.stop_travel()
             self._wait(ctx)
             return True
+        if step.click is not None and not ctx.movement_allowed(step.click):
+            from .navigation import NavigationStep
+            self.task.suspend_movement()  # refused input is not evidence of a physical cliff
+            step = NavigationStep("no_route", step.location, message="exit avoidance: "+ctx.exit_guard.reason)
         if step.status != self.last_state:
             log.info("travel %s: %s", step.status, step.message)
             self.last_state = step.status
@@ -626,7 +631,8 @@ class Wander(Behavior):
             if not (0 <= p.x < w and 0 <= p.y < h):
                 continue
             # reject points that are blocked OR too close to bother with
-            if scene.is_close(p, b.wander_min_distance) or not scene.reachable(p):
+            if (scene.is_close(p, b.wander_min_distance) or not scene.reachable(p)
+                    or not ctx.movement_allowed(p)):
                 continue
             return p
         return None

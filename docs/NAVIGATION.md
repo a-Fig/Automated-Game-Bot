@@ -6,6 +6,46 @@ proposals through the normal guarded input path. Other callers must check focus,
 any proposal. NumPy frames are **BGR**, PIL images are **RGB**. Positions and all
 path tolerances use minimap-crop pixels, not full-frame or physical world units.
 
+## Zone changes and exit buffers
+
+The normal bot loop protects farming, chasing and travel with `[safety] zone_guard
+= true`. At startup it keeps a copy of the first non-black zone-name strip in
+memory. `zone_label_rect = [1960,1365,2160,1395]` is calibrated at
+`zone_label_size = [2240,1400]` and scales with capture dimensions. A mean absolute
+RGB difference over `zone_label_threshold = 15` for `zone_label_seconds = 2` on
+fresh captures latches a stop. A whole-frame mean below `zone_loading_mean = 15`
+stops immediately, including at startup. This is visual change detection, not OCR;
+start in the intended zone with its HUD visible. It cannot identify a wrong zone
+that was already present when the process started.
+
+The status capture checks loading before running models and retains the latch
+even if Latest has since published another frame. Context logs CRITICAL
+`zone changed`, cancels click-to-move, releases the bot's keys/mouse buttons, and
+quits. Restoring the HUD, changing focus or pressing resume does not clear it;
+restart explicitly after verifying the zone. Numeric health is not required for
+zone detection, and the label guard stays active when exit projection is skipped.
+
+`zone.json` has radius-8 no-go discs at each NW/NE/SE/SW marker and inner approach.
+Targets are projected from the latest minimap fix using the inverse calibrated
+matrix. Both the target and the intended straight segment are checked, including
+farming, loot, combat chase, detours, wandering and spell aiming. Wander rejects
+unsafe candidates and picks another direction; the shared input path checks again.
+Only an active travel behavior explicitly targeting `portal:<name>` exempts that
+portal's discs. A numeric goal near an exit does not grant an exemption.
+The exemption allows the approach; crossing that portal still trips the zone guard.
+
+When already inside a buffer, movement must strictly increase distance from both
+the gate marker and its approach, monotonically along the intended segment.
+Permitted outward escapes log INFO. This allows leaving a buffer without allowing
+a click through the gate. Refused travel proposals are not learned as cliffs.
+
+For farming configs without `[navigation]`, Fractured Ground supplies the measured
+long-walk matrix `[[373.34,274.96],[-59.97,341.67]]` for exit projection only. It is
+scoped to 2240x1400 and minimap crop `[1840,1040,2240,1400]`; it does not enable
+uncalibrated travel. A different window/crop skips projection with one WARNING.
+No trusted minimap fix also skips this check, as requested. Exit buffers remain
+approximate: Albion's local pathfinding can bend away from the intended segment.
+
 ## Preview a route
 
 From the repo, using the pinned venv (substitute its full Python path if needed):

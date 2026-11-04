@@ -4,9 +4,74 @@ from __future__ import annotations
 import math
 from collections import deque
 
+import cv2
+import numpy as np
+
 
 class SafetyStop(Exception):
     """Unwind a behavior when safety suspends it or hands control to retreat."""
+
+
+class ZoneGuard:
+    """The first visible zone label is trusted; loading/change latches until restart."""
+    def __init__(self, config):
+        self.s, self.stale_after = config.safety, config.perception.stale_after
+        x0, y0, x1, y1 = self.s.zone_label_rect
+        w, h = self.s.zone_label_size
+        if (not 0 <= x0 < x1 <= w or not 0 <= y0 < y1 <= h
+                or not 0 < self.s.zone_label_threshold <= 255 or self.s.zone_label_seconds <= 0
+                or not 0 <= self.s.zone_loading_mean <= 255):
+            raise ValueError("invalid zone guard rectangle or thresholds")
+        self.reference = None
+        self.changed_at = self.timestamp = None
+        self.reason = ""  # written last; the decision thread only reads worker-owned state
+
+    def observe(self, status, now):
+        if not self.s.zone_guard or self.reason:
+            return self.reason
+        if status is None or not 0 <= now-status.timestamp <= self.stale_after:
+            self.changed_at = None
+            return ""
+        if self.timestamp is not None and status.timestamp <= self.timestamp:
+            return ""
+        if self.timestamp is not None and status.timestamp-self.timestamp > self.stale_after:
+            self.changed_at = None
+        self.timestamp = status.timestamp
+        frame = status.frame
+        if frame is None:
+            self.changed_at = None
+            return ""
+        pixels = np.asarray(frame.convert("RGB") if hasattr(frame, "convert") else frame)
+        if pixels.ndim != 3 or pixels.shape[2] < 3 or not pixels.size:
+            self.changed_at = None
+            return ""
+        mean = float(pixels[:, :, :3].mean())
+        if mean < self.s.zone_loading_mean:
+            self.reason = f"loading frame (mean {mean:.1f})"
+            return self.reason
+        x0, y0, x1, y1 = self.s.zone_label_rect
+        w, h = self.s.zone_label_size
+        height, width = pixels.shape[:2]
+        a, b, c, d = round(x0*width/w), round(y0*height/h), round(x1*width/w), round(y1*height/h)
+        if c <= a or d <= b:
+            self.changed_at = None
+            return ""
+        crop = pixels[b:d, a:c, :3]
+        if not hasattr(frame, "convert"):
+            crop = crop[:, :, ::-1]  # numpy captures are BGR; compare in RGB
+        crop = cv2.resize(crop, (x1-x0, y1-y0), interpolation=cv2.INTER_AREA).astype(np.float32)
+        if self.reference is None:
+            self.reference = crop.copy()
+            return ""
+        difference = float(np.abs(crop-self.reference).mean())
+        if difference > self.s.zone_label_threshold:
+            if self.changed_at is None:
+                self.changed_at = status.timestamp
+            if status.timestamp-self.changed_at >= self.s.zone_label_seconds:
+                self.reason = f"zone label difference {difference:.1f} held {status.timestamp-self.changed_at:.1f}s"
+        else:
+            self.changed_at = None
+        return self.reason
 
 
 class TravelGuard:

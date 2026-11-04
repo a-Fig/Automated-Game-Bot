@@ -66,8 +66,11 @@ def poly(points, confidence=0.9):
 class World:
     """A brain wired to fakes, with helpers to set what the bot sees."""
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(self, config: Config | None = None, *, zone_guard=False) -> None:
         self.config = config or Config()
+        # Legacy frames are opaque or just a HUD/minimap on black. Zone-guard
+        # tests explicitly opt in with full synthetic world frames.
+        self.config.safety.zone_guard = zone_guard
         self.clock = FakeClock()
         self.workers = FakeWorkers()
         self.window = FixedWindow(W, H)

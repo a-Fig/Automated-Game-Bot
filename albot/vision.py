@@ -11,6 +11,7 @@ from .config import Config
 from .geometry import Point, Polygon
 from .spells import SpellSlotMapper
 from .state import Detection, Scene, Status
+from .safety import ZoneGuard
 from .window import Rect
 
 log = logging.getLogger(__name__)
@@ -214,6 +215,7 @@ class Perceiver:
         self.capture = capture
         self.window = window
         self.spell_slots = SpellSlotMapper(len(config.keys.slots))
+        self.zone_guard = ZoneGuard(config)
 
     def scene_from(self, frame: Any, size: tuple[int, int], timestamp: float,
                    capture_ms: float = 0.0) -> Scene:
@@ -251,4 +253,8 @@ class Perceiver:
 
     def scan_status(self, want_loading_bar: bool) -> Status:
         frame, _, ts, _ = self.grab()
+        if self.config.safety.zone_guard and self.window.is_active():
+            raw = Status(ts, (), False, True, health_fraction=read_health(frame, self.config), frame=frame)
+            if self.zone_guard.observe(raw, time.monotonic()):
+                return raw  # loading must latch even if the spell model would fail on this frame
         return self.status_from(frame, ts, want_loading_bar)

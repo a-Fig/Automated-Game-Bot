@@ -20,7 +20,8 @@ from .geometry import Point
 from .behaviors import Behavior, Blacklist, Plan, SystemRandom, danger, default_behaviors
 from .state import Detection, Scene, Status
 from .resources import ResourceMemory
-from .safety import DeathGuard, SafetyStop, TravelGuard
+from .safety import DeathGuard, SafetyStop, TravelGuard, ZoneGuard
+from .navigation import ExitGuard
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class Context:
         self.resources = ResourceMemory(config, self.clock)
         self.death_guard = DeathGuard(config)
         self.travel_guard = TravelGuard(config)
+        self._worker_zone_guard = getattr(workers, "zone_guard", None)
+        self.zone_guard = self._worker_zone_guard or ZoneGuard(config)
+        self.exit_guard = ExitGuard(config.navigation)
         self.travel_moving = False
         self.travel_retreating = False
         self.active_behavior = ""
@@ -119,6 +123,23 @@ class Context:
         if self.quit.is_set():
             raise SafetyStop()
         status = self.status()
+        zone_reason = (self.zone_guard.reason if self._worker_zone_guard is not None
+                       else self.zone_guard.observe(status, self.now()))
+        if zone_reason:
+            self.quit.set()  # latch before cleanup; a restored HUD must never resume this run
+            self.travel_moving = self.travel_retreating = False
+            self.resources.clear()
+            log.critical("zone changed: %s; stopping run, restart required", zone_reason)
+            try:
+                if self.window.is_active():
+                    self.input.press(self.config.keys.stop)  # also cancel farming/chase click-to-move
+            except Exception:
+                log.exception("zone changed: stop key failed; run remains stopped")
+            try:
+                self.input.release()
+            except Exception:
+                log.exception("zone changed: input release failed; run remains stopped")
+            raise SafetyStop()
         if (self.travel_guard.critical_since is not None and status is not None
                 and status.health_fraction is not None
                 and status.health_fraction > self.config.safety.zero_health):
@@ -220,22 +241,45 @@ class Context:
         (self.workers.want_loading_bar.set if on else self.workers.want_loading_bar.clear)()
 
     # acting --------------------------------------------------------------------
+    def movement_allowed(self, point):
+        status = self.status()
+        if status is None:
+            return True
+        goal = self.config.behavior.travel_goal if self.active_behavior == "travel" else ""
+        return self.exit_guard.allowed(status.frame, status.timestamp, self.now(), point, goal)
+
+    def _guard_movement(self, point):
+        if not self.movement_allowed(point):
+            log.warning("movement refused near %s", self.exit_guard.reason)
+            self.travel_moving = self.travel_retreating = False
+            if self.window.is_active():
+                self.input.press(self.config.keys.stop)
+            if self.scene() is not None:
+                self.resources.move(self.scene(), None)
+            raise SafetyStop()
+        if self.exit_guard.outward:
+            log.info("exit buffer escape: moving strictly outward from %s", ",".join(self.exit_guard.outward))
+        self.check_safety()  # the worker may latch a loading frame while projection runs
+
     def press(self, key) -> None:
         self.check_safety()
         self.input.press(key)
 
     def move_to(self, point) -> None:
         self.check_safety()
+        self._guard_movement(point)
         self.input.move_to(point)
 
     def click(self, point, stop: bool = True) -> None:
         self.check_safety()
+        self._guard_movement(point)
         self.input.click(point, stop=stop)
         if self.scene() is not None:
             self.resources.move(self.scene(), point)
 
     def walk_to(self, point) -> None:
         self.check_safety()
+        self._guard_movement(point)
         self.input.walk_to(point)
         if self.scene() is not None:
             self.resources.move(self.scene(), point)

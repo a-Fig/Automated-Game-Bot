@@ -333,14 +333,19 @@ class Zone:
     road: np.ndarray | None = None
 
     @classmethod
-    def load(cls, name: str, config: NavigationConfig | None = None, *, learned: bool = True):
+    def asset_folder(cls, name, config=None):
         cfg = config or NavigationConfig()
         if not name or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789_" for c in name):
             raise ValueError("zone name must contain only lowercase letters, digits and underscores")
         root = Path(cfg.assets_folder)
         if not root.is_absolute() and cfg.assets_folder == "assets/zones":
             root = Path(__file__).resolve().parent.parent / root
-        folder = root / name
+        return root / name
+
+    @classmethod
+    def load(cls, name: str, config: NavigationConfig | None = None, *, learned: bool = True):
+        cfg = config or NavigationConfig()
+        folder = cls.asset_folder(name, cfg)
         with (folder / "zone.json").open(encoding="utf-8") as f:
             metadata = json.load(f)
         clearance = cfg.clearance if cfg.clearance is not None else metadata.get("clearance", 2.0)
@@ -397,6 +402,84 @@ class Zone:
         return build_walkability(image, cfg["terrain_polygon"], tuple(cfg["size"]),
                                  cfg["tab_to_map"] if kind == "tab" else None,
                                  **cfg.get("colors", {}))
+
+
+class ExitGuard:
+    """Project world targets into the live minimap; never read runtime learned data."""
+    def __init__(self, config):
+        self.config = config
+        self.metadata = None
+        self.locator = None
+        self.timestamp, self.location = None, None
+        self.reason = ""
+        self.outward = []
+        self.warned_scope = False
+
+    def allowed(self, frame, timestamp, now, target, travel_goal=""):
+        cfg = self.config
+        self.reason = ""
+        self.outward = []
+        if frame is None:
+            return True
+        try:
+            image = as_bgr(frame)
+        except (TypeError, ValueError):
+            return True
+        if (image.shape[1::-1] != (2240, 1400) or tuple(cfg.window_size) != (2240, 1400)
+                or tuple(cfg.minimap_rect) != (1840, 1040, 2240, 1400)):
+            if not self.warned_scope:
+                log.warning("exit projection skipped: window/crop differs from the 2240x1400 calibration")
+                self.warned_scope = True
+            return True
+        if self.metadata is None:
+            # Avoid loading zone data at all for unsupported frames or no arrow.
+            if locate(frame, cfg) is None:
+                return True
+            self.metadata = json.loads((Zone.asset_folder(cfg.zone, cfg) / "zone.json").read_text())
+            self.locator = MapLocator(cfg, self.metadata["terrain_polygon"])
+        if timestamp != self.timestamp:
+            self.location = self.locator.locate(frame, timestamp)
+            self.timestamp = timestamp
+        if self.location is None or not 0 <= now-timestamp <= 2:
+            return True  # requested fallback: no trusted minimap fix, no exit projection
+        discs = self.metadata.get("exit_no_go", [])
+        if not discs:
+            return True
+        calibration = self.metadata.get("exit_projection", {})
+        matrix = cfg.minimap_to_screen
+        if not cfg.calibrated:
+            if (calibration.get("window_size") != list(cfg.window_size)
+                    or calibration.get("minimap_rect") != list(cfg.minimap_rect)):
+                self.reason = "exit avoidance requires a calibrated minimap_to_screen matrix"
+                return False
+            matrix = calibration["minimap_to_screen"]
+        matrix = np.asarray(matrix, float)
+        if matrix.shape != (2, 2) or not np.isfinite(matrix).all() or abs(np.linalg.det(matrix)) < 1e-8:
+            self.reason = "exit avoidance has an invalid calibration matrix"
+            return False
+        delta = np.linalg.solve(matrix, np.asarray(target)-np.asarray(cfg.player_screen))
+        origin = self.location.point
+        projected = np.asarray(origin)+delta
+        exempt = travel_goal.split(":", 1)[1].upper() if travel_goal.startswith("portal:") else ""
+        for portal in dict.fromkeys(d["portal"] for d in discs):
+            if portal == exempt:
+                continue
+            group = [d for d in discs if d["portal"] == portal]
+            inside = any(origin.dist(Point(*d["center"])) <= max(8.0, d["radius"]) for d in group)
+            if inside and all(np.dot(np.asarray(origin)-d["center"], delta) >= 0
+                              and np.linalg.norm(projected-d["center"]) > origin.dist(Point(*d["center"]))+1e-6
+                              for d in group):
+                self.outward.append(portal)
+                continue  # monotonically away from BOTH marker and approach; never through the gate
+            # Check the whole intended segment too: a distant chase target must
+            # not be allowed to click through an exit and land beyond its disc.
+            for disc in group:
+                center, radius = np.asarray(disc["center"]), max(8.0, disc["radius"])
+                t = np.clip(np.dot(center-origin, delta)/max(float(np.dot(delta, delta)), 1e-9), 0, 1)
+                if np.linalg.norm(np.asarray(origin)+delta*t-center) <= radius:
+                    self.reason = f"{portal} exit: projected target {projected[0]:.2f},{projected[1]:.2f}"
+                    return False
+        return True
 
 
 def screen_click(delta, config: NavigationConfig) -> Point | None:
@@ -482,6 +565,10 @@ class NavigateTo:
         """Call after dispatch, never on a proposed click or a throttled re-click."""
         if self.zero_at is None and self.last_location is not None:
             self.zero_point, self.zero_at = self.last_location.point, now
+
+    def suspend_movement(self):
+        self.progress_at = None
+        self.zero_point, self.zero_at = None, None
 
     def resume_after_backtrack(self, point, now, stalled_at):
         self.route, self.failed, self.failed_point = [], False, None

@@ -125,7 +125,7 @@
         188.08352675205924,
         98.3511832255563
       ],
-      "destination": null
+      "destination": "Vixen Tor"
     },
     "SE": {
       "marker": [
@@ -201,5 +201,102 @@
     130,
     250,
     145
-  ]
+  ],
+  "exit_no_go": [
+    {
+      "portal": "NE",
+      "center": [
+        276.6681201870076,
+        114.2375471517938
+      ],
+      "radius": 8.0,
+      "kind": "marker"
+    },
+    {
+      "portal": "NE",
+      "center": [
+        271.69607883475,
+        124.19223003218052
+      ],
+      "radius": 8.0,
+      "kind": "approach"
+    },
+    {
+      "portal": "NW",
+      "center": [
+        183.10300525910446,
+        88.40074041551816
+      ],
+      "radius": 8.0,
+      "kind": "marker"
+    },
+    {
+      "portal": "NW",
+      "center": [
+        186.0,
+        96.8
+      ],
+      "radius": 8.0,
+      "kind": "approach"
+    },
+    {
+      "portal": "SE",
+      "center": [
+        256.8113312985565,
+        227.70524372791266
+      ],
+      "radius": 8.0,
+      "kind": "marker"
+    },
+    {
+      "portal": "SE",
+      "center": [
+        251.83165781967148,
+        219.74531348691698
+      ],
+      "radius": 8.0,
+      "kind": "approach"
+    },
+    {
+      "portal": "SW",
+      "center": [
+        178.19159691283153,
+        240.67707198244258
+      ],
+      "radius": 8.0,
+      "kind": "marker"
+    },
+    {
+      "portal": "SW",
+      "center": [
+        185.15499884820136,
+        232.71205365702863
+      ],
+      "radius": 8.0,
+      "kind": "approach"
+    }
+  ],
+  "exit_projection": {
+    "window_size": [
+      2240,
+      1400
+    ],
+    "minimap_rect": [
+      1840,
+      1040,
+      2240,
+      1400
+    ],
+    "minimap_to_screen": [
+      [
+        373.34,
+        274.96
+      ],
+      [
+        -59.97,
+        341.67
+      ]
+    ],
+    "source": "User long-walk calibration, 2026-11-04; exit checks only, not permission for uncalibrated travel"
+  }
 }

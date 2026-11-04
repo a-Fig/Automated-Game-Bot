@@ -12,6 +12,7 @@ import threading
 import time
 
 from .state import Latest, Scene, Status
+from .safety import ZoneGuard
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class Workers:
         self.config = config
         self.scenes: Latest[Scene] = Latest()
         self.statuses: Latest[Status] = Latest()
+        self.zone_guard = getattr(perceiver, "zone_guard", None) or ZoneGuard(config)
         self.running = threading.Event()   # cleared while paused
         self.stopping = threading.Event()
         # set by the farm behavior while it waits for a loading bar, so the loading
@@ -68,7 +70,10 @@ class Workers:
 
     def _status_loop(self) -> None:
         start = time.monotonic()
-        self.statuses.publish(self.perceiver.scan_status(self.want_loading_bar.is_set()))
+        status = self.perceiver.scan_status(self.want_loading_bar.is_set())
+        if self.perceiver.window.is_active():
+            self.zone_guard.observe(status, time.monotonic())
+        self.statuses.publish(status)
         period = 1.0 / max(0.1, self.config.perception.status_hz)
         rest = period - (time.monotonic() - start)
         if rest > 0:

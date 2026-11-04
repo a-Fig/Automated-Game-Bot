@@ -268,6 +268,7 @@ def test_threads_brain_and_workers_run_together():
     )
     cfg = Config()
     cfg.health.model_fallback = True  # this test uses opaque frames, not HUD pixels
+    cfg.safety.zone_guard = False
     window = FixedWindow(1000, 800)
     capture = SimpleNamespace(grab=lambda rect: object())
     perceiver = Perceiver(cfg, models, capture, window)
