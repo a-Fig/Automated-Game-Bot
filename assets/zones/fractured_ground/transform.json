@@ -35,6 +35,127 @@
       8.857830941197758
     ]
   ],
+  "observations": {
+    "classifier": {
+      "walk_ne_fixes.json": {
+        "samples": 536,
+        "unsafe": 0,
+        "near_classes": {
+          "boundary": 0,
+          "rock": 0,
+          "water": 0,
+          "grey": 128
+        }
+      },
+      "visited.json": {
+        "samples": 723,
+        "unsafe": 6,
+        "near_classes": {
+          "boundary": 9,
+          "rock": 0,
+          "water": 0,
+          "grey": 187
+        }
+      }
+    },
+    "disc_radius": 1.0,
+    "native_scale": 4,
+    "effective_discs": [
+      {
+        "center": [
+          240.0,
+          146.0
+        ],
+        "opened_cells": 11
+      },
+      {
+        "center": [
+          224.0,
+          112.25
+        ],
+        "opened_cells": 1
+      },
+      {
+        "center": [
+          215.25,
+          120.0
+        ],
+        "opened_cells": 1
+      },
+      {
+        "center": [
+          216.25,
+          119.25
+        ],
+        "opened_cells": 4
+      },
+      {
+        "center": [
+          222.0,
+          112.0
+        ],
+        "opened_cells": 1
+      }
+    ],
+    "ordered_walks": [
+      "walk_ne_fixes.json"
+    ],
+    "opened_native_cells": 18,
+    "opened_map_area": 1.125,
+    "after": {
+      "walk_ne_fixes.json": {
+        "samples": 536,
+        "unsafe": 0
+      },
+      "visited.json": {
+        "samples": 723,
+        "unsafe": 0
+      }
+    },
+    "consecutive_pairs": {
+      "walk_ne_fixes.json": {
+        "checked": 535,
+        "failed": []
+      }
+    },
+    "baseline_parameters": {
+      "scale": 4,
+      "rim_margin": 10.0,
+      "ground_value": 165,
+      "level_value": 205,
+      "boundary_width": 0.5,
+      "dark_rock_value": 160,
+      "rock_max_area": 10.0,
+      "water_saturation": 75,
+      "block_neutral_grey": true,
+      "road_saturation": 135,
+      "road_value": 210,
+      "road_gap": 4.0,
+      "road_half_width": 2.8
+    },
+    "before": {
+      "walk_ne_fixes.json": {
+        "samples": 536,
+        "unsafe": 267,
+        "near_classes": {
+          "boundary": 72,
+          "rock": 191,
+          "water": 128,
+          "grey": 128
+        }
+      },
+      "visited.json": {
+        "samples": 723,
+        "unsafe": 374,
+        "near_classes": {
+          "boundary": 206,
+          "rock": 199,
+          "water": 187,
+          "grey": 187
+        }
+      }
+    }
+  },
   "tab_to_map": [
     [
       0.22219927350625307,
@@ -99,13 +220,14 @@
   ],
   "parameters": {
     "scale": 4,
-    "rim_margin": 10.0,
+    "rim_margin": 15.0,
     "ground_value": 165,
-    "level_value": 205,
-    "boundary_width": 0.5,
-    "dark_rock_value": 160,
-    "rock_max_area": 10.0,
+    "level_value": 215,
+    "boundary_width": 0.25,
+    "dark_rock_value": 120,
+    "rock_max_area": 0.0,
     "water_saturation": 75,
+    "block_neutral_grey": false,
     "road_saturation": 135,
     "road_value": 210,
     "road_gap": 4.0,
@@ -159,8 +281,8 @@
   ],
   "route_check": {
     "start": [
-      240.87,
-      130.51
+      220.2,
+      124.1
     ],
     "goal": [
       271.69607883475,
@@ -169,44 +291,16 @@
     "clearance": 1.0,
     "waypoints": [
       [
-        240.0,
-        130.5
+        220.25,
+        124.0
       ],
       [
-        237.75,
-        130.5
+        241.5,
+        142.5
       ],
       [
-        237.25,
-        131.25
-      ],
-      [
-        236.0,
-        131.75
-      ],
-      [
-        230.5,
-        132.75
-      ],
-      [
-        229.75,
-        133.75
-      ],
-      [
-        229.5,
-        141.75
-      ],
-      [
-        230.25,
-        143.0
-      ],
-      [
-        231.5,
-        143.5
-      ],
-      [
-        240.5,
-        143.5
+        242.5,
+        142.75
       ],
       [
         244.25,
@@ -215,6 +309,26 @@
       [
         249.25,
         140.0
+      ],
+      [
+        251.75,
+        136.75
+      ],
+      [
+        260.75,
+        130.75
+      ],
+      [
+        262.0,
+        130.75
+      ],
+      [
+        264.5,
+        130.0
+      ],
+      [
+        268.75,
+        126.75
       ],
       [
         271.75,
