@@ -158,6 +158,36 @@ class SafetyConfig:
 
 
 @dataclass
+class NavigationConfig:
+    zone: str = "fractured_ground"
+    assets_folder: str = "assets/zones"
+    window_size: tuple[int, int] = (2240, 1400)
+    minimap_rect: tuple[int, int, int, int] = (1840, 1040, 2240, 1400)
+    player_screen: tuple[int, int] = (1125, 560)
+    # Identity is a direction-only guess. Live tasks refuse clicks until calibrated.
+    calibrated: bool = False
+    minimap_to_screen: list[list[float]] = field(default_factory=lambda: [[1.0, 0.0], [0.0, 1.0]])
+    map_speed_px_per_s: float = 6.0
+    arrow_min_value: int = 150
+    arrow_min_saturation: int = 60
+    arrow_min_mean_value: float = 170.0
+    arrow_min_dark_border: float = 0.3
+    clearance: float = 2.0
+    snap_radius: int = 8
+    lookahead: float = 8.0
+    arrival_tolerance: float = 3.0
+    waypoint_tolerance: float = 2.0
+    click_min: float = 250.0
+    click_max: float = 400.0
+    safe_screen_rect: tuple[int, int, int, int] = (400, 200, 1800, 1100)
+    stuck_seconds: float = 4.0
+    progress_pixels: float = 0.8
+    side_step_seconds: float = 1.0
+    stuck_block_radius: int = 3
+    max_replans: int = 3
+
+
+@dataclass
 class DataConfig:
     folder: str = "training_data"
     # chance per tick of saving a screenshot, as 1 in N. 0 turns it off
@@ -187,6 +217,7 @@ class Config:
     perception: PerceptionConfig = field(default_factory=PerceptionConfig)
     health: HealthConfig = field(default_factory=HealthConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
+    navigation: NavigationConfig = field(default_factory=NavigationConfig)
     data: DataConfig = field(default_factory=DataConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
 
@@ -212,7 +243,8 @@ def _build(cls, data: dict[str, Any], path: str):
             value = [CastStep(**v) for v in value]
         elif name == "fallback":
             value = CastStep(**value)
-        elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar"):
+        elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar",
+                                                  "minimap_rect", "player_screen", "safe_screen_rect"):
             value = tuple(value)
         kwargs[name] = value
     return cls(**kwargs)
