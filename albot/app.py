@@ -210,10 +210,28 @@ def main(argv=None) -> int:
     replay = sub.add_parser("replay", help="run decisions on saved screenshots")
     replay.add_argument("folder")
     replay.add_argument("--out", default="replay_out")
+    nav = sub.add_parser("nav", help="preview map navigation without sending input")
+    nav.add_argument("--to", required=True, help="portal:NE or minimap x,y")
+    nav.add_argument("--dry-run", action="store_true", help="required: print proposals only")
+    nav.add_argument("--image", help="saved frame instead of live capture")
+    nav.add_argument("--zone", help="zone asset folder name")
+    nav.add_argument("--calibration", help="JSON from nav-calibrate --samples")
+    calibrate = sub.add_parser("nav-calibrate", help="measure or solve the map-to-screen transform")
+    calibrate.add_argument("--probe", help="one screen displacement, e.g. 350,0")
+    calibrate.add_argument("--execute", action="store_true", help="allow one live calibration click")
+    calibrate.add_argument("--samples", nargs="+", help="solve saved probe JSON files, no input")
+    calibrate.add_argument("--out", required=True, help="output sample or calibration JSON")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.config)
     setup_logging(cfg)
     if not os.path.exists(args.config):
         log.info("no %s found, using defaults (copy albot.example.toml to change them)", args.config)
+    if args.command in ("nav", "nav-calibrate"):
+        from .navigation_cli import cmd_calibrate, cmd_nav
+        try:
+            return (cmd_nav if args.command == "nav" else cmd_calibrate)(cfg, args)
+        except (ValueError, OSError) as e:
+            log.error("%s", e)
+            return 1
     return {"run": cmd_run, "check": cmd_check, "replay": cmd_replay}[args.command](cfg, args)

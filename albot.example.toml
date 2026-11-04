@@ -122,6 +122,34 @@ recovery_health = 0.1      # re-arm only after health is at least this high...
 recovery_seconds = 2.0     # ...continuously this long; no automatic respawn input
 # Death records and exact triggering frames go to data.folder/deaths/.
 
+[navigation]
+# Map coordinates below are pixels relative to minimap_rect, NOT full-frame pixels.
+zone = "fractured_ground"
+assets_folder = "assets/zones"  # default resolved from repo root; custom paths from cwd
+window_size = [2240, 1400]      # no automatic UI scaling
+minimap_rect = [1840, 1040, 2240, 1400]
+player_screen = [1125, 560]     # world-click origin; recalibrate for different UI sizes
+calibrated = false             # task API refuses clicks until measured (dry-run can preview)
+minimap_to_screen = [[1.0, 0.0], [0.0, 1.0]]  # screen_delta = matrix @ minimap_delta
+map_speed_px_per_s = 6.0        # guess; nav-calibrate estimates from movement probes
+arrow_min_value = 150          # correct BGR->HSV arrow hue is around 104, not around 10
+arrow_min_saturation = 60      # recorded darkening reduces both value and saturation
+arrow_min_mean_value = 170.0
+arrow_min_dark_border = 0.3    # distinguishes the arrow from blue castle/rock pixels
+clearance = 2.0                # minimap pixels around every wall
+snap_radius = 8                # max distance to find a clear start/goal pixel
+lookahead = 8.0                # minimap pixels along the next clear route segment
+arrival_tolerance = 3.0
+waypoint_tolerance = 2.0
+click_min = 250.0              # screen pixels from player_screen
+click_max = 400.0
+safe_screen_rect = [400, 200, 1800, 1100]  # excludes HUD; never clamp x/y independently
+stuck_seconds = 4.0            # no reduction in distance to the next waypoint
+progress_pixels = 0.8          # ignore subpixel arrow jitter
+side_step_seconds = 1.0        # one perpendicular click, then replan
+stuck_block_radius = 3         # block intended stuck point in this task's private mask
+max_replans = 3                # then stop proposing clicks, rather than loop forever
+
 [data]
 folder = "training_data"
 sample_main = 200          # 1 in N ticks saves a screenshot; 0 = off
