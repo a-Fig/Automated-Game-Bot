@@ -145,6 +145,8 @@ def build_walkability(frame, polygon, size=(400, 360), transform=None,
 
 
 class WalkGrid:
+    scale = 1
+
     def __init__(self, mask, clearance: float = 2.0, snap_radius: int = 8) -> None:
         self.mask = np.asarray(mask, dtype=bool).copy()
         if self.mask.ndim != 2 or not self.mask.any():
@@ -176,6 +178,9 @@ class WalkGrid:
     def save(self, path):
         if not cv2.imwrite(str(path), self.mask.astype(np.uint8) * 255):
             raise OSError(f"could not write mask: {path}")
+
+    def copy_with(self, clearance, snap_radius):
+        return WalkGrid(self.mask, clearance, snap_radius)
 
     def is_safe(self, point) -> bool:
         x, y = round(point[0]), round(point[1])
@@ -255,6 +260,63 @@ class WalkGrid:
         return simplified
 
 
+class ScaledWalkGrid:
+    """High-resolution storage, with every public point/distance in minimap pixels."""
+    def __init__(self, mask, scale: int, clearance=2.0, snap_radius=8):
+        if not isinstance(scale, int) or scale < 1:
+            raise ValueError("planning scale must be a positive integer")
+        self.scale, self.clearance, self.snap_radius = scale, clearance, snap_radius
+        self.native = WalkGrid(mask, clearance*scale, round(snap_radius*scale))
+
+    @property
+    def mask(self):
+        return self.native.mask
+
+    @property
+    def safe(self):
+        return self.native.safe
+
+    def save(self, path):
+        self.native.save(path)
+
+    def _inflate(self):
+        self.native._inflate()
+
+    @classmethod
+    def load(cls, path, override, scale, **kwargs):
+        mask = WalkGrid.load(path, clearance=0).mask
+        paint = cv2.imread(str(override), cv2.IMREAD_GRAYSCALE)
+        expected = (mask.shape[0]//scale, mask.shape[1]//scale)
+        if paint is None or paint.shape != expected or not np.isin(paint, (0, 128, 255)).all():
+            raise ValueError("override must match map dimensions and contain only 0, 128 or 255")
+        paint = cv2.resize(paint, (mask.shape[1], mask.shape[0]), interpolation=cv2.INTER_NEAREST)
+        mask[paint == 0], mask[paint == 255] = False, True
+        return cls(mask, scale, **kwargs)
+
+    def copy_with(self, clearance, snap_radius):
+        return ScaledWalkGrid(self.mask, self.scale, clearance, snap_radius)
+
+    def _point(self, point):
+        return Point(point[0]*self.scale, point[1]*self.scale)
+
+    def is_safe(self, point):
+        return self.native.is_safe(self._point(point))
+
+    def snap(self, point):
+        x, y = self.native.snap(self._point(point))
+        return x/self.scale, y/self.scale
+
+    def line_clear(self, a, b):
+        return self.native.line_clear(self._point(a), self._point(b))
+
+    def block(self, point, radius=3):
+        self.native.block(self._point(point), math.ceil(radius*self.scale))
+
+    def plan(self, start, goal):
+        return [Point(x/self.scale, y/self.scale)
+                for x, y in self.native.plan(self._point(start), self._point(goal))]
+
+
 @dataclass
 class Zone:
     name: str
@@ -273,10 +335,18 @@ class Zone:
         folder = root / name
         with (folder / "zone.json").open(encoding="utf-8") as f:
             metadata = json.load(f)
-        grid = WalkGrid.load(folder / "mask.png", folder / "override.png",
-                             clearance=cfg.clearance, snap_radius=cfg.snap_radius)
+        clearance = cfg.clearance if cfg.clearance is not None else metadata.get("clearance", 2.0)
+        scale = metadata.get("planning_scale", 1)
+        if not isinstance(scale, int) or scale < 1:
+            raise ValueError("planning scale must be a positive integer")
+        if scale == 1:
+            grid = WalkGrid.load(folder / "mask.png", folder / "override.png", clearance=clearance,
+                                 snap_radius=cfg.snap_radius)
+        else:
+            grid = ScaledWalkGrid.load(folder / metadata["planning_mask"], folder / "override.png", scale,
+                                       clearance=clearance, snap_radius=cfg.snap_radius)
         x0, y0, x1, y1 = cfg.minimap_rect
-        if grid.mask.shape != (y1-y0, x1-x0):
+        if grid.mask.shape != ((y1-y0)*scale, (x1-x0)*scale):
             raise ValueError("zone mask and minimap crop must have the same dimensions")
         return cls(name, folder, metadata, grid)
 
@@ -298,6 +368,8 @@ class Zone:
 
     def build_mask(self, frame, kind="minimap"):
         cfg = self.metadata
+        if cfg.get("mask_generator"):
+            raise ValueError("use tools/zone/tabmap_mask.py with full-resolution Tab captures and live fixes")
         image = as_bgr(frame)
         if kind == "minimap":
             x0, y0, x1, y1 = cfg["minimap_rect"]
@@ -365,7 +437,8 @@ class NavigateTo:
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
-        self.grid = WalkGrid(self.zone.grid.mask, self.config.clearance, self.config.snap_radius)
+        self.grid = self.zone.grid.copy_with(self.config.clearance if self.config.clearance is not None
+                                             else self.zone.grid.clearance, self.config.snap_radius)
         self.locator = MapLocator(self.config, self.zone.metadata["terrain_polygon"])
         self.allow_uncalibrated = allow_uncalibrated
         self.route: list[Point] = []
@@ -391,7 +464,8 @@ class NavigateTo:
         from (230, 121) avoids. Seen live on 2026-11-04: every tick then
         reported "no clear segment" and the walk never started.
         """
-        cell = Point(round(point.x), round(point.y))
+        scale = self.grid.scale
+        cell = Point(round(point.x*scale)/scale, round(point.y*scale)/scale)
         return self.grid.line_clear(point, target) or self.grid.line_clear(cell, target)
 
     def tick(self, frame, now: float) -> NavigationStep:
@@ -416,7 +490,7 @@ class NavigateTo:
                 cell = self.grid.snap(point)
             except ValueError:
                 cell = None
-            if cell is None or point.dist(Point(*cell)) > self.config.clearance + 2:
+            if cell is None or point.dist(Point(*cell)) > self.grid.clearance + 2:
                 return NavigationStep("no_route", location, message="player outside clear mask; calibrate mask/clearance")
             self.route = []
             if not self.config.calibrated and not self.allow_uncalibrated:
@@ -475,7 +549,7 @@ class NavigateTo:
                 # Block far enough ahead that the blocked circle plus clearance
                 # can't cover the player's own cell (seen live: a waypoint 2 px
                 # ahead got blocked, and every later tick was no_route).
-                reach = self.config.stuck_block_radius + self.config.clearance + 1
+                reach = self.config.stuck_block_radius + self.grid.clearance + 1
                 ahead = max(1.0, reach / max(math.hypot(delta.x, delta.y), 1e-9))
                 self.stuck_point = Point(point.x+delta.x*ahead, point.y+delta.y*ahead)
                 self.side_step_at = now

@@ -187,7 +187,7 @@ class NavigationConfig:
     arrow_min_saturation: int = 60
     arrow_min_mean_value: float = 170.0
     arrow_min_dark_border: float = 0.3
-    clearance: float = 2.0
+    clearance: float | None = None  # zone default when omitted; 2.0 for zones without one
     snap_radius: int = 8
     lookahead: float = 8.0
     arrival_tolerance: float = 3.0

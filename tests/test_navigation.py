@@ -40,7 +40,8 @@ def recorded_frame(name):
 def open_zone(cfg):
     metadata = {"terrain_polygon": [[0, 0], [399, 0], [399, 359], [0, 359]],
                 "portals": {"NE": {"approach": [290, 145]}}}
-    return Zone("fake", Path("."), metadata, WalkGrid(np.ones((360, 400), bool), cfg.clearance))
+    return Zone("fake", Path("."), metadata, WalkGrid(np.ones((360, 400), bool),
+                                                      cfg.clearance if cfg.clearance is not None else 2.0))
 
 
 @pytest.mark.parametrize("name,expected", [
@@ -185,8 +186,8 @@ def test_bundled_zone_routes_recorded_position_to_ne_portal():
     assert all(zone.grid.line_clear(a, b) for a, b in zip(route, route[1:]))
     assert not zone.metadata["walkability_verified"]
     image = cv2.imread(str(zone.folder / "map.png"))
-    rebuilt = zone.build_mask(image, kind="map")
-    assert np.array_equal(rebuilt, cv2.imread(str(zone.folder / "mask.png"), 0) > 0)
+    with pytest.raises(ValueError, match="full-resolution Tab"):
+        zone.build_mask(image, kind="map")  # don't silently restore the obsolete colour mask
 
 
 @pytest.mark.parametrize("delta", [(100, 0), (-100, 0), (0, 100), (0, -100), (0.01, 0.01)])

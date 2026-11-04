@@ -349,7 +349,7 @@ class Travel(Behavior):
                    if point.dist(self.trail[i]) <= n.retreat_tolerance]
         if reached:
             self.retreat_index = min(reached)-1
-        outside_hazards = all(point.dist(hazard) > n.attack_block_radius+n.clearance+0.5
+        outside_hazards = all(point.dist(hazard) > n.attack_block_radius+self.task.grid.clearance+0.5
                               for hazard in self.blocked_spots)
         if guard.critical_since is None and guard.calm(ctx.now()) and outside_hazards:
             ctx.stop_travel()

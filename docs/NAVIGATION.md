@@ -122,6 +122,15 @@ The minimum click radius can aim past a nearby waypoint; the dispatcher must
 recheck frames frequently and replace movement before overshooting a turn. This
 API does not claim that a single click's entire travel is safe to run open-loop.
 
+Clearance inherits `zone.json` when omitted from `[navigation]`. Fractured Ground's
+Tab-derived mask uses 1.0 minimap pixel; zones without a value still use 2.0. An
+explicit `navigation.clearance` always wins, including an old explicit 2.0. Remove
+that key or set it to 1.0 to use the detailed mask. See the zone asset README for
+the saved-image generator, registered overlays and the independent drift checks.
+Fractured Ground plans on the 4x Tab grid; every returned waypoint and controller
+distance still uses the original 400x360 minimap coordinate space. Painted overrides
+remain 400x360 and are expanded with nearest-neighbour sampling before clearance.
+
 If distance to the next waypoint does not decrease for `stuck_seconds`, it proposes
 one perpendicular sidestep. After `side_step_seconds` it blocks the intended stuck
 point (not the current player cell) in a private task mask and replans. After
@@ -136,9 +145,9 @@ Arrival means near the portal's **approach point**, not a completed zone transfe
 - Matrix and walking speed via the probes above; remeasure after changing zoom,
   movement mode or UI scaling. The movement speed is used for tracking gates, not
   for open-loop travel. Follow ticks need frequent fresh frames.
-- Tan/road vs brown/blue walkability, wall clearance, lookahead and arrival radius.
-  Paint the per-zone override mask after observing collisions. Colour alone cannot
-  establish traversability or determine whether a grey patch is water vs rock.
+- Flat tan and brown ground levels, cliff boundaries, road ramps and grey patches;
+  wall clearance, lookahead and arrival radius. Paint verified override corrections
+  after observing collisions. Colour alone cannot establish actual traversability.
 - Portal approach points. NE is intended for Bridgewatch, but transition, banking
   and selling remain outside this task API. The configured zone is trusted; a
   caller must stop navigation on zone change or unexpected overlays.
