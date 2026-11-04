@@ -101,6 +101,7 @@ def cmd_run(cfg, args) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        brain.finish_travel("stopped")  # also covers Ctrl-C outside the normal run-loop exit
         brain.quit.set()
         workers.stop()
         keyboard.unhook_all_hotkeys()

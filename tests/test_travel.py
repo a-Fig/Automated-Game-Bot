@@ -54,6 +54,13 @@ def fake_navigation(monkeypatch, steps):
             self.locator = SimpleNamespace(locate=lambda frame, now: self.position)
             self.grid = WalkGrid(np.ones((360, 400), bool))
             self.route = []
+            self.goal = Point(290, 145)
+            self.evidence = SimpleNamespace(edges=[])
+        def note_walk(self, now):
+            pass
+        def resume_after_backtrack(self, point, now, stalled_at):
+            self.route = []
+            calls.append(("resume", point))
         def record_position(self, location):
             calls.append(("observe", location))
         def block_hazard(self, point, radius):
@@ -580,10 +587,102 @@ def test_travel_gives_up_after_no_move_so_the_bot_is_not_held_still(monkeypatch,
 def test_forward_travel_reclicks_about_once_a_second_without_the_stop_key(monkeypatch):
     fake_navigation(monkeypatch, [NavigationStep("move", click=TRAVEL_CLICK)] * 6)
     w = travel_world()
+    travel = seed_route(w)
+    dispatched = []
+    travel.task.note_walk = dispatched.append
     for _ in range(6):
         see(w)
         w.tick()
         w.clock.sleep(0.3)
     clicks = [a for a in w.input.actions if a[0] == "walk"]
     assert 2 <= len(clicks) <= 3
+    assert len(dispatched) == len(clicks)  # zero-motion timing starts on actual dispatch, not proposals
     assert ("press", "s") not in w.input.actions
+
+
+def test_stalled_travel_backtracks_three_pixels_twice_then_gives_up(monkeypatch, caplog):
+    calls = fake_navigation(monkeypatch, [NavigationStep("stalled"), NavigationStep("move", click=TRAVEL_CLICK),
+        NavigationStep("stalled"), NavigationStep("move", click=TRAVEL_CLICK), NavigationStep("stalled")])
+    w = travel_world()
+    travel = seed_route(w)
+    travel.task.evidence.edges.append({"known": "cliff"})
+    with caplog.at_level("INFO"):
+        w.tick()
+        assert travel.backtrack_spot == Point(235, 145)
+        w.clock.sleep(1)
+        see(w)
+        w.tick()
+        assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
+        for attempt in range(2):
+            travel.task.position = Location(232, 145, None, 0.9)
+            see(w)
+            w.tick()
+            assert travel.backtrack_spot is None and len(travel.task.evidence.edges) == 1
+            travel.task.position = Location(235, 145, None, 0.9)
+            see(w)
+            w.tick()  # forward retry
+            see(w)
+            w.tick()  # same spot stalls again
+        assert not w.config.behavior.travel_goal and travel.task is None
+    assert len([c for c in calls if c[0] == "resume"]) == 2
+    summaries = [r.message for r in caplog.records if "travel summary" in r.message]
+    assert len(summaries) == 1 and "outcome=gave_up" in summaries[0]
+
+
+def test_backtrack_yields_to_enemy_published_during_localisation(monkeypatch):
+    fake_navigation(monkeypatch, [NavigationStep("stalled")])
+    w = travel_world()
+    travel = seed_route(w)
+    w.tick()
+    mob = pred("mob", PLAYER[0]+60, PLAYER[1])
+    def locate_then_enemy(frame, now):
+        see(w, [mob])
+        return Location(235, 145, None, 0.9)
+    travel.task.locator.locate = locate_then_enemy
+    w.clock.sleep(1)
+    see(w)
+    w.input.actions.clear()
+    w.tick()
+    assert not any(a[0] == "walk" for a in w.input.actions)
+    assert w.brain.counts["fight_close"] == 1
+
+
+def test_backtrack_without_movement_times_out_without_inventing_a_path(monkeypatch, caplog):
+    fake_navigation(monkeypatch, [NavigationStep("stalled")])
+    w = travel_world()
+    w.config.navigation.backtrack_seconds = 1
+    travel = seed_route(w)
+    w.tick()
+    w.clock.sleep(1.2)
+    see(w)
+    w.tick()
+    assert not w.config.behavior.travel_goal and travel.task is None
+    assert "backtrack timeout" in caplog.text
+    assert not any(a[0] == "walk" for a in w.input.actions)
+
+
+@pytest.mark.parametrize("outcome", ["cancelled", "stopped"])
+def test_journey_summary_reports_best_progress_once(monkeypatch, caplog, outcome):
+    fake_navigation(monkeypatch, [NavigationStep("move", click=TRAVEL_CLICK)]*3)
+    w = travel_world()
+    w.tick()
+    travel = next(b for b in w.brain.behaviors if b.name == "travel")
+    travel.task.position = Location(245, 145, None, 0.9)
+    travel.task.evidence.edges.append({"new": "edge"})
+    see(w)
+    w.tick()
+    travel.task.position = Location(240, 145, None, 0.9)
+    see(w)
+    w.tick()
+    with caplog.at_level("INFO"):
+        if outcome == "cancelled":
+            w.config.behavior.travel_goal = ""
+            see(w)
+            w.tick()
+        else:
+            w.brain.finish_travel(outcome)
+        w.brain.finish_travel("stopped")
+    summaries = [r.message for r in caplog.records if "travel summary" in r.message]
+    assert len(summaries) == 1
+    assert "start=(235.00,145.00) best=(245.00,145.00) progress=10.00" in summaries[0]
+    assert f"edges=1 outcome={outcome}" in summaries[0]

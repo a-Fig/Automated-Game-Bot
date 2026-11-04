@@ -452,7 +452,8 @@ class NavigateTo:
                 or self.config.side_step_seconds < 0 or self.config.progress_pixels <= 0
                 or self.config.map_speed_px_per_s <= 0 or self.config.stuck_block_radius < 1
                 or self.config.max_replans < 0 or not math.isfinite(self.config.learned_edge_length)
-                or self.config.learned_edge_length <= 0):
+                or self.config.learned_edge_length <= 0 or self.config.zero_motion_seconds <= 0
+                or self.config.zero_motion_pixels <= 0):
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
@@ -474,6 +475,19 @@ class NavigateTo:
         self.failed_point = None
         self.last_tick = None
         self.no_route_reports = {}
+        self.last_location = None
+        self.zero_point, self.zero_at = None, None
+
+    def note_walk(self, now):
+        """Call after dispatch, never on a proposed click or a throttled re-click."""
+        if self.zero_at is None and self.last_location is not None:
+            self.zero_point, self.zero_at = self.last_location.point, now
+
+    def resume_after_backtrack(self, point, now, stalled_at):
+        self.route, self.failed, self.failed_point = [], False, None
+        self.stalls = [old for old in self.stalls if old.dist(stalled_at) > self.config.stuck_block_radius]
+        self.progress_at, self.motion_anchor = now, point
+        self.zero_point, self.zero_at = None, None
 
     def _fresh_grid(self, edges=None):
         base = self.zone.base_grid or self.zone.grid
@@ -512,6 +526,7 @@ class NavigateTo:
         self.index = 1
         self.progress_at = now
         self.motion_anchor = Point(*start)
+        self.zero_point, self.zero_at = None, None
 
     @staticmethod
     def _connected(grid, start, goal):
@@ -593,8 +608,14 @@ class NavigateTo:
         if location is None:
             # Do not count time behind an overlay as walking without progress.
             self.progress_at = None
+            self.zero_point, self.zero_at = None, None
             return NavigationStep("lost", message="minimap arrow missing or ambiguous; no click")
+        self.last_location = location
         point = location.point
+        if not moving:
+            self.zero_point, self.zero_at = None, None
+        elif self.zero_at is not None and (gap > 2 or point.dist(self.zero_point) >= self.config.zero_motion_pixels):
+            self.zero_point, self.zero_at = point, now
         if moving:
             self.record_position(location)
         if self.failed_point is not None and point.dist(self.failed_point) > self.config.stuck_block_radius:
@@ -655,7 +676,8 @@ class NavigateTo:
             dx, dy = target.x-point.x, target.y-point.y
             scale = min(1.0, self.config.lookahead / max(distance, 1e-9))
             delta = Point(dx*scale, dy*scale)
-            if now-self.progress_at >= self.config.stuck_seconds:
+            zero_motion = self.zero_at is not None and now-self.zero_at >= self.config.zero_motion_seconds
+            if zero_motion or now-self.progress_at >= self.config.stuck_seconds:
                 attempts = sum(point.dist(old) <= self.config.stuck_block_radius for old in self.stalls)
                 if attempts >= self.config.max_replans:
                     self.failed = True
@@ -664,10 +686,10 @@ class NavigateTo:
                 self.stalls.append(point)
                 self.replans += 1
                 blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length,
-                                              now, road=self.zone.road)
+                                              now, road=self.zone.road, fan=zero_motion)
                 self.grid = self._fresh_grid()
-                log.warning("navigation: stall at %.2f,%.2f toward %.2f,%.2f; edge=%s; replan %d at spot",
-                            point.x, point.y, target.x, target.y, blocked, attempts+1)
+                log.warning("navigation: stall at %.2f,%.2f toward %.2f,%.2f; edge=%s fan=%s; replan %d at spot",
+                            point.x, point.y, target.x, target.y, blocked, zero_motion, attempts+1)
                 self._plan(point, now)
                 # Return without a side-step click; next fresh tick follows the
                 # alternative route through the normal guarded dispatch path.

@@ -340,10 +340,17 @@ class Brain:
             self._tick()
         except SafetyStop:
             self.ctx.current_plan = None
+            if self.quit.is_set():
+                self.finish_travel("safety_stop")
             self.ctx.clock.sleep(0.1)
 
     def _tick(self) -> None:
         ctx = self.ctx
+        if not self.config.behavior.travel_goal:
+            for behavior in self.behaviors:
+                if behavior.name == "travel" and behavior.goal:
+                    ctx.stop_travel()
+                    behavior.finish(ctx, "cancelled")
         ctx.check_safety()
         scene, status = ctx.scene(), ctx.status()
         retreat = ctx.retreat_required(scene)
@@ -438,6 +445,11 @@ class Brain:
         ctx.clock.sleep(0.2)
 
     # running -------------------------------------------------------------------
+    def finish_travel(self, outcome):
+        for behavior in self.behaviors:
+            if behavior.name == "travel":
+                behavior.finish(self.ctx, outcome)
+
     def run(self) -> None:
         ctx = self.ctx
         while not self.quit.is_set():
@@ -457,6 +469,7 @@ class Brain:
                 self.errors += 1
                 log.exception("error during a tick; carrying on")
                 ctx.clock.sleep(0.5)
+        self.finish_travel("stopped")
 
     def _wait_for_focus(self) -> None:
         ctx = self.ctx
