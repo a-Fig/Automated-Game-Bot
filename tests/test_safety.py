@@ -324,3 +324,17 @@ def test_gather_bar_is_read_from_green_pixels_not_the_model():
     assert read_gather_bar(np.zeros((10, 10, 3), dtype=np.uint8), Config()) is None
     status = perceiver().status_from(frame, 1, True)
     assert status.loading_bar is True
+
+
+def test_gather_bar_real_bar_counts_but_plant_leaves_under_the_player_do_not():
+    from pathlib import Path
+    import cv2
+    from albot.vision import read_gather_bar
+    fixtures = Path(__file__).parent / "fixtures" / "gather"
+    def frame(name):
+        f = np.zeros((1400, 2240, 3), dtype=np.uint8)
+        f[980:1080, 960:1340] = cv2.imread(str(fixtures / name))
+        return f
+    assert read_gather_bar(frame("bar_real.png"), Config()) is True  # live frame s2_00777
+    # 781 green leaf pixels in the bar strip, live 2026-11-04 next to a cotton bush
+    assert read_gather_bar(frame("leaves_no_bar.png"), Config()) is False

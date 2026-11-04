@@ -150,6 +150,8 @@ class HealthConfig:
     # The green gathering/skinning progress bar under the player; window pixels at 2240x1400.
     gather_bar: tuple[int, int, int, int] = (1015, 1024, 1280, 1037)
     gather_bar_min_pixels: int = 30
+    gather_bar_min_run: int = 25       # an unbroken green run this long in a row...
+    gather_bar_left_slack: int = 20    # ...starting this close to the bar's left end
     gather_bar_model: bool = False   # the old loading_bar model; it fires on health bars
 
 

@@ -123,7 +123,23 @@ def read_gather_bar(frame: Any, config: Config) -> bool | None:
     seg = pixels[y0:y1, x0:x1, :3].astype(int)
     r, g, b = (seg[..., 0], seg[..., 1], seg[..., 2]) if rgb else (seg[..., 2], seg[..., 1], seg[..., 0])
     green = (g > 110) & (g > 1.5 * r) & (g > 1.5 * b)
-    return int(green.sum()) >= h.gather_bar_min_pixels
+    if int(green.sum()) < h.gather_bar_min_pixels:
+        return False
+    # The bar fills from its left end as one unbroken run per row. Green leaves
+    # of a plant under the player also put hundreds of green pixels here (live
+    # 2026-11-04: "still gathering after 30 s" four times next to a cotton bush),
+    # but never as long runs that start at the bar's left end.
+    rows = 0
+    for line in green:
+        xs = np.flatnonzero(line)
+        if len(xs) < h.gather_bar_min_run:
+            continue
+        breaks = np.flatnonzero(np.diff(xs) > 1)
+        start = xs[0]
+        length = (xs[breaks[0]] if len(breaks) else xs[-1]) - start + 1
+        if start <= h.gather_bar_left_slack and length >= h.gather_bar_min_run:
+            rows += 1
+    return rows >= 3
 
 
 def choose_player(predictions: Sequence, config: Config, size: tuple[int, int]) -> tuple[Point, bool]:
