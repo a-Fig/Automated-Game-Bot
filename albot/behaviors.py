@@ -14,6 +14,7 @@ The brain asks each behavior for a plan in priority order and runs the first one
 """
 from __future__ import annotations
 
+import logging
 import math
 import random
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from typing import Optional, Sequence
 
 from .geometry import Point, find_detour
 from .state import Detection, Scene, Status
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -227,10 +230,16 @@ class Farm(Behavior):
                 s = ctx.status()
                 return s.timestamp > clicked_at and bool(s.loading_bar)
 
-            # walk to the node: wait for the gathering bar to appear
-            if not ctx.wait_until(loading, b.farm_walk_timeout, interrupt=ctx.danger):
+            # Walk to the node: wait for the gathering bar to appear. A fixed 3 s
+            # gave up on any node more than ~3 s of walking away, so allow for
+            # the distance too.
+            distance = ctx.scene().player.dist(plan.target.center)
+            walk_timeout = max(b.farm_walk_timeout, 1.0 + distance / b.walk_speed_px_per_s)
+            if not ctx.wait_until(loading, walk_timeout, interrupt=ctx.danger):
                 if ctx.danger():
                     return False
+                log.info("farm %s at %.0f px: no gathering bar within %.1f s",
+                         plan.target.class_name, distance, walk_timeout)
                 # No bar and no danger: remember the original world spot, even
                 # if the camera moved while approaching the depleted node.
                 ctx.resources.failure(plan.target.class_name, spot)
@@ -242,6 +251,7 @@ class Farm(Behavior):
             if ctx.danger():
                 return False
             if not finished:
+                log.info("farm %s: still gathering after %.0f s", plan.target.class_name, b.farm_max_seconds)
                 ctx.resources.failure(plan.target.class_name, spot)
                 return False
             ctx.wait_for_new_scene()
