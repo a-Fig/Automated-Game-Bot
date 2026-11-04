@@ -1,0 +1,113 @@
+{
+  "name": "Fractured Ground",
+  "size": [
+    400,
+    360
+  ],
+  "minimap_rect": [
+    1840,
+    1040,
+    2240,
+    1400
+  ],
+  "terrain_polygon": [
+    [
+      210,
+      55
+    ],
+    [
+      365,
+      161
+    ],
+    [
+      210,
+      267
+    ],
+    [
+      52,
+      162
+    ]
+  ],
+  "tab_to_map": [
+    [
+      0.22368003645408968,
+      -3.16781957427e-05,
+      -40.29486419785125
+    ],
+    [
+      -0.0004054866112693,
+      0.2221982170598105,
+      -21.332338018576664
+    ]
+  ],
+  "source": "tabmap_open_2.png (2026-11-04, 2240x1400); affine fit from four yellow portal markers; residual <0.5 minimap px",
+  "walkability_verified": false,
+  "colors": {
+    "ground_lower": [
+      5,
+      45,
+      155
+    ],
+    "ground_upper": [
+      28,
+      180,
+      255
+    ],
+    "road_lower": [
+      5,
+      130,
+      175
+    ],
+    "road_upper": [
+      28,
+      255,
+      255
+    ]
+  },
+  "portals": {
+    "NE": {
+      "marker": [
+        277,
+        106
+      ],
+      "approach": [
+        272,
+        116
+      ],
+      "destination": "Bridgewatch"
+    },
+    "NW": {
+      "marker": [
+        183,
+        80
+      ],
+      "approach": [
+        188,
+        90
+      ],
+      "destination": null
+    },
+    "SE": {
+      "marker": [
+        257,
+        220
+      ],
+      "approach": [
+        252,
+        212
+      ],
+      "destination": null
+    },
+    "SW": {
+      "marker": [
+        178,
+        233
+      ],
+      "approach": [
+        185,
+        225
+      ],
+      "destination": null
+    }
+  }
+}

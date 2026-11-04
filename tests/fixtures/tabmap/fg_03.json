@@ -1,0 +1,19 @@
+{
+  "minimap_before": [
+    237.71,
+    130.5
+  ],
+  "minimap_after": [
+    237.71,
+    130.5
+  ],
+  "window": [
+    2240,
+    1400
+  ],
+  "image_origin": [
+    300,
+    230
+  ],
+  "live_minimap": "fg_03_minimap.png"
+}

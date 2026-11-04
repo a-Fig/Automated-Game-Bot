@@ -150,7 +150,8 @@ arrow_min_value = 150          # correct BGR->HSV arrow hue is around 104, not a
 arrow_min_saturation = 60      # recorded darkening reduces both value and saturation
 arrow_min_mean_value = 170.0
 arrow_min_dark_border = 0.3    # distinguishes the arrow from blue castle/rock pixels
-clearance = 2.0                # minimap pixels around every wall
+# clearance = 2.0              # explicit value overrides zone.json; omit for the zone default
+# Fractured Ground's Tab mask uses 1.0; other zones without a default still use 2.0.
 snap_radius = 8                # max distance to find a clear start/goal pixel
 lookahead = 8.0                # minimap pixels along the next clear route segment
 arrival_tolerance = 3.0

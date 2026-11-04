@@ -1,0 +1,225 @@
+{
+  "live_features": {
+    "matches": 627,
+    "inliers": 288,
+    "median_error": 0.5172705946053918,
+    "p95_error": 0.9350017349985542
+  },
+  "reference_features": {
+    "matches": 1071,
+    "inliers": 864,
+    "median_error": 0.3259917589188085,
+    "p95_error": 0.713246587640494
+  },
+  "tab_to_reference": [
+    [
+      0.22325851196663843,
+      0.0003858459682671559,
+      -39.729635225875604
+    ],
+    [
+      -0.0003858459682671559,
+      0.22325851196663843,
+      -21.813302035356344
+    ]
+  ],
+  "reference_to_live": [
+    [
+      0.9952562845212428,
+      0.0004240070348580917,
+      0.9371846289283781
+    ],
+    [
+      -0.0004240070348580916,
+      0.9952562845212428,
+      8.857830941197758
+    ]
+  ],
+  "tab_to_map": [
+    [
+      0.22219927350625307,
+      0.0004786788044408751,
+      -38.613233504877336
+    ],
+    [
+      -0.0004786788044408751,
+      0.22219927350625307,
+      -12.835149350822544
+    ]
+  ],
+  "arrow_checks": [
+    {
+      "capture": "fg_01.png",
+      "tab_arrow": [
+        1260.0,
+        649.5
+      ],
+      "mapped_arrow": [
+        241.6687529964859,
+        130.88014349789333
+      ],
+      "live_fix": [
+        240.87,
+        130.51
+      ],
+      "error": 0.8803479757618008
+    },
+    {
+      "capture": "fg_02.png",
+      "tab_arrow": [
+        1249.5,
+        650.0
+      ],
+      "mapped_arrow": [
+        239.3358999640724,
+        130.99626926209308
+      ],
+      "live_fix": [
+        239.86,
+        130.3
+      ],
+      "error": 0.8714767541334308
+    },
+    {
+      "capture": "fg_03.png",
+      "tab_arrow": [
+        1242.5,
+        650.0
+      ],
+      "mapped_arrow": [
+        237.78050504952867,
+        130.99962001372415
+      ],
+      "live_fix": [
+        237.71,
+        130.5
+      ],
+      "error": 0.504570233092246
+    }
+  ],
+  "parameters": {
+    "scale": 4,
+    "rim_margin": 10.0,
+    "ground_value": 165,
+    "level_value": 205,
+    "boundary_width": 0.5,
+    "dark_rock_value": 160,
+    "rock_max_area": 10.0,
+    "water_saturation": 75,
+    "road_saturation": 135,
+    "road_value": 210,
+    "road_gap": 4.0,
+    "road_half_width": 2.8
+  },
+  "coordinate_space": "live_minimap",
+  "notes": "Fixes validate only; no arrow-based transform adjustment.",
+  "asset_live_checks": [
+    {
+      "matches": 203,
+      "inliers": 103,
+      "median_error": 0.46082736415455816,
+      "p95_error": 0.9533877617039812,
+      "offset": 0.08262984454631805,
+      "translation": [
+        -0.0548858642578125,
+        -0.061767578125
+      ],
+      "center_drift": 0.13562493841156475,
+      "p95_displacement": 1.2083793878555298,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    },
+    {
+      "matches": 216,
+      "inliers": 107,
+      "median_error": 0.45539989469662157,
+      "p95_error": 0.9202850741893175,
+      "offset": 0.11478713154792786,
+      "translation": [
+        -0.0548858642578125,
+        -0.1008148193359375
+      ],
+      "center_drift": 0.18973181790436863,
+      "p95_displacement": 1.0600833892822266,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    },
+    {
+      "matches": 190,
+      "inliers": 101,
+      "median_error": 0.4551491425272094,
+      "p95_error": 0.8514545705446481,
+      "offset": 0.12602151930332184,
+      "translation": [
+        -0.0548858642578125,
+        -0.11344146728515625
+      ],
+      "center_drift": 0.13652105442285722,
+      "p95_displacement": 1.2532212734222412,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    }
+  ],
+  "route_check": {
+    "start": [
+      240.87,
+      130.51
+    ],
+    "goal": [
+      271.69607883475,
+      124.19223003218052
+    ],
+    "clearance": 1.0,
+    "waypoints": [
+      [
+        240.0,
+        130.5
+      ],
+      [
+        237.75,
+        130.5
+      ],
+      [
+        237.25,
+        131.25
+      ],
+      [
+        236.0,
+        131.75
+      ],
+      [
+        230.5,
+        132.75
+      ],
+      [
+        229.75,
+        133.75
+      ],
+      [
+        229.5,
+        141.75
+      ],
+      [
+        230.25,
+        143.0
+      ],
+      [
+        231.5,
+        143.5
+      ],
+      [
+        240.5,
+        143.5
+      ],
+      [
+        244.25,
+        142.25
+      ],
+      [
+        249.25,
+        140.0
+      ],
+      [
+        271.75,
+        124.25
+      ]
+    ]
+  }
+}

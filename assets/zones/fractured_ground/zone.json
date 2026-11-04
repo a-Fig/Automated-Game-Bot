@@ -12,35 +12,47 @@
   ],
   "terrain_polygon": [
     [
-      210,
-      55
+      210.0,
+      52.0
     ],
     [
-      365,
-      161
+      370.25,
+      164.0
     ],
     [
-      210,
-      267
+      372.75,
+      173.75
     ],
     [
-      52,
-      162
+      215.75,
+      281.25
+    ],
+    [
+      205.5,
+      281.75
+    ],
+    [
+      51.75,
+      175.25
+    ],
+    [
+      56.0,
+      163.0
     ]
   ],
   "tab_to_map": [
     [
-      0.22368003645408968,
-      -3.16781957427e-05,
-      -40.29486419785125
+      0.22219927350625307,
+      0.0004786788044408751,
+      -38.613233504877336
     ],
     [
-      -0.0004054866112693,
-      0.2221982170598105,
-      -21.332338018576664
+      -0.0004786788044408751,
+      0.22219927350625307,
+      -12.835149350822544
     ]
   ],
-  "source": "tabmap_open_2.png (2026-11-04, 2240x1400); affine fit from four yellow portal markers; residual <0.5 minimap px",
+  "source": "registered Tab captures: fg_01.png, fg_02.png, fg_03.png",
   "walkability_verified": false,
   "colors": {
     "ground_lower": [
@@ -67,47 +79,66 @@
   "portals": {
     "NE": {
       "marker": [
-        277,
-        106
+        276.6681201870076,
+        114.2375471517938
       ],
       "approach": [
-        272,
-        116
+        271.69607883475,
+        124.19223003218052
       ],
       "destination": "Bridgewatch"
     },
     "NW": {
       "marker": [
-        183,
-        80
+        183.10300525910446,
+        88.40074041551816
       ],
       "approach": [
-        188,
-        90
+        188.08352675205924,
+        98.3511832255563
       ],
       "destination": null
     },
     "SE": {
       "marker": [
-        257,
-        220
+        256.8113312985565,
+        227.70524372791266
       ],
       "approach": [
-        252,
-        212
+        251.83165781967148,
+        219.74531348691698
       ],
       "destination": null
     },
     "SW": {
       "marker": [
-        178,
-        233
+        178.19159691283153,
+        240.67707198244258
       ],
       "approach": [
-        185,
-        225
+        185.15499884820136,
+        232.71205365702863
       ],
       "destination": null
     }
-  }
+  },
+  "coordinate_space": "live_minimap",
+  "mask_generator": "tools/zone/tabmap_mask.py",
+  "mask_parameters": {
+    "scale": 4,
+    "rim_margin": 10.0,
+    "ground_value": 165,
+    "level_value": 205,
+    "boundary_width": 0.5,
+    "dark_rock_value": 160,
+    "rock_max_area": 10.0,
+    "water_saturation": 75,
+    "road_saturation": 135,
+    "road_value": 210,
+    "road_gap": 4.0,
+    "road_half_width": 2.8
+  },
+  "clearance": 1.0,
+  "planning_mask": "mask_hires.png",
+  "planning_scale": 4
 }
