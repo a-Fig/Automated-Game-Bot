@@ -16,6 +16,7 @@ from collections import Counter
 from typing import Callable, Optional
 
 from .actuator import FocusLost, MouseFailsafe
+from .geometry import Point
 from .behaviors import Behavior, Blacklist, Plan, SystemRandom, danger, default_behaviors
 from .state import Detection, Scene, Status
 from .resources import ResourceMemory
@@ -292,6 +293,7 @@ class Brain:
         self.pause_reason = ""
         self._empty_since: Optional[float] = None
         self._pressed_esc = False
+        self._lost_steps = 0
 
     # control -------------------------------------------------------------------
     def pause(self, reason: str) -> None:
@@ -307,6 +309,7 @@ class Brain:
             self.paused.clear()
             self.ctx.workers.resume()
             self._empty_since = None
+            self._lost_steps = 0
             log.warning("RESUMED")
 
     def toggle_pause(self) -> None:
@@ -355,6 +358,7 @@ class Brain:
             return
         self._empty_since = None
         self._pressed_esc = False
+        self._lost_steps = 0
 
         tried: list[str] = []
         while True:
@@ -400,6 +404,28 @@ class Brain:
             ctx.saver.maybe("nothing_detected", self.config.data.sample_nothing_detected)
         waited = now - self._empty_since
         limit = self.config.behavior.lost_seconds
+        status = ctx.status()
+        if status is not None and status.health_fraction is not None:
+            # The HUD is readable, so we're in the world with no menu open: the
+            # model just can't see anything (2026-11-04: the player stood behind
+            # a palm). Esc would open the game menu (Logout, Close Application),
+            # so step out of cover instead, then pause if that doesn't help.
+            steps = int(waited // limit)
+            if steps > self._lost_steps and steps <= 4:
+                self._lost_steps = steps
+                w, h = scene.window_size if (scene := ctx.scene()) is not None else (0, 0)
+                if w and h:
+                    dx, dy = ((300, 0), (0, 250), (-300, 0), (0, -250))[(steps - 1) % 4]
+                    p = Point(w / 2 + self.config.detection.player_offset[0] + dx,
+                              h / 2 + self.config.detection.player_offset[1] + dy)
+                    log.info("nothing detected for %.0fs with the HUD visible; stepping out of cover", waited)
+                    ctx.click(p, stop=False)
+            elif steps > 4:
+                if ctx.saver is not None:
+                    ctx.saver.save("nothing_detected")
+                self.pause(f"nothing detected for {waited:.0f}s")
+            ctx.clock.sleep(0.2)
+            return
         if waited >= limit and not self._pressed_esc:
             log.info("nothing detected for %.0fs, pressing %s", waited, self.config.keys.close_menus)
             ctx.press(self.config.keys.close_menus)

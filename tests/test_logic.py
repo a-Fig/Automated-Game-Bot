@@ -181,15 +181,26 @@ def test_farm_succeeds_when_the_loading_bar_comes_and_goes():
     assert w.brain.counts["farm"] == 1
 
 
-def test_nothing_detected_presses_esc_then_pauses():
+def test_nothing_detected_without_hud_sends_no_input():
     w = World()
     for _ in range(40):
         w.see([], player=False)
+        w.status(health=None)  # HUD unreadable: safety suspends input, so no blind esc
+        w.tick()
+    assert not w.input.actions
+
+
+def test_nothing_detected_with_hud_visible_steps_out_of_cover_never_esc():
+    w = World()
+    for _ in range(80):
+        w.see([], player=False)
+        w.status(health=0.9)
         w.tick()
         if w.brain.paused.is_set():
             break
-    assert ("press", "esc") in w.input.actions
-    assert w.brain.paused.is_set() and w.workers.paused
+    assert ("press", "esc") not in w.input.actions
+    assert len([a for a in w.input.actions if a[0] == "click"]) == 4
+    assert w.brain.paused.is_set()
 
 
 def test_waits_stop_when_focus_is_lost():
