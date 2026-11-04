@@ -104,11 +104,17 @@ def leash_and_heal():
         kb.press_and_release('f')
     else:
         return False
-    i = 0
-    while G.LOW_HEALTH[0] and not danger():
-        i += 1
+    # wait to regenerate. danger() counts low health as danger, so it has to be
+    # told to ignore it here: otherwise this loop never runs and the 5 second wait
+    # returns at once, and the bot goes straight back to work while still low.
+    # capped so a health model stuck on "low" can't hold the bot forever
+    def threat():
+        return danger(count_low_health=False)
+
+    give_up_at = time.time() + 60
+    while G.LOW_HEALTH[0] and not threat() and time.time() < give_up_at:
         time.sleep(.5)
-    helper.wait_unless(5, danger)
+    helper.wait_unless(5, threat)
     return True
 
 
@@ -117,12 +123,12 @@ def eat_food():
     time.sleep(2)
 
 
-def danger():
+def danger(count_low_health=True):
     scanned_image = G.getlastScannedImage()
     if len(scanned_image.reds) > 0:
         print("RED, DANGER")
         return True
-    if G.LOW_HEALTH[0]:
+    if count_low_health and G.LOW_HEALTH[0]:
         print("LOW, DANGER")
         return True
     for ob in scanned_image.mobs:

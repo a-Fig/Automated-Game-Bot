@@ -51,6 +51,13 @@ used `switch()`, which flips the current state. Any extra flip left the scanners
 the opposite state from the one the main loop assumed. It now calls explicit
 `pause_scanners()` and `resume_scanners()`.
 
+**Healing never waited (`player_actions.leash_and_heal`).** `danger()` returns True
+whenever health is low, so `while LOW_HEALTH and not danger()` never ran its body, and
+`wait_unless(5, danger)` returned at once. After the leash, the bot went straight back
+to work while still low. `danger()` now takes `count_low_health`, which the heal wait
+sets to False, so it waits for health to recover unless a real threat shows up. The
+wait is capped at 60 seconds.
+
 **Farming could hang (`player_actions.farm`).** The loading-bar wait had no time
 limit, so a false loading-bar detection held the bot in place forever. It now gives
 up after 30 seconds and sleeps briefly between checks.
