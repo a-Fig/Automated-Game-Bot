@@ -590,6 +590,8 @@ class Farm(Behavior):
                 ctx.resources.failure(plan.target.class_name, spot)
                 return False
             ctx.resources.success(plan.target.class_name, spot)
+            log.info("farm %s at %.0f px: gathered in %.1f s", plan.target.class_name, distance,
+                     ctx.now()-clicked_at)
             ctx.wait_for_new_scene()
             return True
         finally:

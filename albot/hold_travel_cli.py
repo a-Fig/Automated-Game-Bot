@@ -99,7 +99,10 @@ def cmd_travel_hold(cfg, args):
     trails = Trails(nav.zone.folder / "hold_trails.json")
     route, source = trails.route(fix.point, nav.goal), "saved trail"
     if route is None:
-        partial = trails.route_toward(fix.point, nav.goal)
+        # Join a trail from up to 8 map px away in a straight line (live
+        # 2026-11-04: farming ended 3.8 px from the basin trail and the planner
+        # alone walked into the ledge it does not know about).
+        partial = trails.route_toward(fix.point, nav.goal) or trails.route_toward(fix.point, nav.goal, near=8.0)
         if partial is not None:
             route, source = partial+plan_route(nav, partial[-1])[1:], "saved trail, then planner"
         else:
