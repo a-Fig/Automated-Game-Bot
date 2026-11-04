@@ -48,6 +48,7 @@ def open_zone(cfg):
     ("frame_minimap_1.png", (235, 145)), ("s1_00039.png", (235, 145)),
     ("s1_00079.png", (236, 145)), ("s1_00179.png", (225, 125)),
     ("s1_00316.png", (217, 123)),
+    ("frame_minimap_wide_arrow.png", (233, 127)),  # sideways arrow, 15 px wide
 ])
 def test_recorded_arrow_not_castle_including_darkened_frames(name, expected):
     frame = recorded_frame(name)

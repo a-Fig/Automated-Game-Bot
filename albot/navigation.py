@@ -67,7 +67,8 @@ def locate(frame, config: NavigationConfig | None = None, previous: Location | N
     candidates = []
     for i in range(1, count):
         x, y, w, h, area = stats[i]
-        if not (12 <= area <= 100 and 4 <= w <= 14 and 4 <= h <= 14 and 0.2 <= area / (w * h) <= 0.85):
+        # A sideways arrow measured 15 px wide live (2026-11-04), so allow 16.
+        if not (12 <= area <= 100 and 4 <= w <= 16 and 4 <= h <= 16 and 0.2 <= area / (w * h) <= 0.85):
             continue
         component = (labels == i).astype(np.uint8)
         value = float(hsv[:, :, 2][component != 0].mean())
