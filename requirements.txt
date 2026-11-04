@@ -1,0 +1,11 @@
+# Versions are not pinned: the original repo didn't record which ones it used.
+# onnxruntime-gpu (with CUDA) instead of onnxruntime makes scans much faster.
+inference
+onnxruntime-gpu
+pyautogui
+keyboard
+pygetwindow
+mss
+numpy
+pillow
+opencv-python

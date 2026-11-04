@@ -54,6 +54,25 @@ Loading Bar model https://universe.roboflow.com/albion-edu-workspace/loading_bar
 
 Low Health model https://universe.roboflow.com/albion-edu-workspace/low_detector
 
+## Running it
+This branch is a rewrite of the original scripts into the `albot` package. The
+original code is on `main`; `REWRITE.md` explains what changed and why.
+
+```
+pip install -r requirements.txt
+set ROBOFLOW_KEY1=your_key
+set ROBOFLOW_KEY2=your_key
+copy albot.example.toml albot.toml      (optional: every setting has a default)
+
+python -m albot check                   finds the window, loads the models, runs a test scan
+python -m albot run --dry-run           decides and logs, sends no input
+python -m albot run                     plays: F8 pause/resume, F9 quit, right shift screenshot
+python -m albot replay training_data\bridgewatch_data --out replay_out
+                                        runs the models and decisions on saved screenshots
+                                        and writes annotated copies, no game needed
+python -m pytest tests                  logic tests, run on any OS without the game
+```
+
 ## Setup
 ### Simple
 You can download the pre-compiled binary from my google drive 
