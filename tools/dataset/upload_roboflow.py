@@ -49,9 +49,16 @@ def read_names(out_dir: Path) -> list[str]:
         return [m.group(2) for m in re.finditer(r"^\s+(\d+):\s*(\S+)\s*$", text, re.M)]
 
 
-def group_of(stem: str, rx: re.Pattern) -> str:
+def group_of(stem: str, rx: re.Pattern, block: int = 0) -> str:
+    """Group name for a frame. With block > 0 a long single recording (s1_00000 ... s1_02044) is cut into
+    runs of `block` consecutive frames, so neighbouring near-duplicate frames still share a split."""
     m = rx.match(stem)
-    return m.group(1) if m and m.group(1) else stem
+    g = m.group(1) if m and m.group(1) else stem
+    if block > 0:
+        n = re.search(r"[_-]f?(\d+)(?:_full)?$", stem)
+        if n:
+            g = f"{g}_blk{int(n.group(1)) // block:04d}"
+    return g
 
 
 def assign_splits(groups: dict[str, list[str]], seed: int) -> dict[str, str]:
@@ -78,6 +85,8 @@ def main() -> int:
     ap.add_argument("--key-env", default="ROBOFLOW_KEY2", help="environment variable holding the API key for the workspace")
     ap.add_argument("--license", default="CC BY 4.0", help="project license (only used when creating)")
     ap.add_argument("--group-regex", default=DEFAULT_GROUP_RE)
+    ap.add_argument("--block", type=int, default=0,
+                    help="split a long recording into groups of this many consecutive frames (e.g. 40); needed when all frames share one session prefix")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--batch-name", default=None, help="Roboflow upload batch name (default: the out_dir name)")
     ap.add_argument("--include-empty", action="store_true", help="also upload frames with no labels (as negatives)")
@@ -95,7 +104,7 @@ def main() -> int:
             continue
         lab = out / "labels" / f"{p.stem}.txt"
         rows = [ln.split() for ln in lab.read_text(encoding="utf-8").splitlines() if ln.strip()] if lab.exists() else []
-        frames.append({"image": p, "label": lab, "rows": rows, "group": group_of(p.stem, rx)})
+        frames.append({"image": p, "label": lab, "rows": rows, "group": group_of(p.stem, rx, args.block)})
     if not frames:
         sys.exit(f"no images in {out / 'images'}")
     skipped = [f for f in frames if not f["rows"] and not args.include_empty]

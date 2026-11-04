@@ -25,12 +25,14 @@ REPO_ROOT = HERE.parent.parent
 
 # --------------------------------------------------------------------------- schema
 
-CLASSES = ["player", "mob", "hide", "fiber", "fiber_depleted", "red", "silver"]
+# "red" (AoE telegraph) was dropped after the first full run: it fired on shadows and red leaves, not telegraphs.
+# To bring it back put "red" between "fiber_depleted" and "silver" here and in OLD_TO_NEW.
+CLASSES = ["player", "mob", "hide", "fiber", "fiber_depleted", "silver"]
 CLASS_ID = {n: i for i, n in enumerate(CLASSES)}
 
 # Old detector class -> new class, used as a hint only (hide/mob were polluted, so both of those
 # map to "mob" and the VLM decides alive vs dead later). Old ore/stone/tree are not in the schema.
-OLD_TO_NEW = {"player": "player", "mob": "mob", "hide": "mob", "fiber": "fiber", "red": "red", "silver": "silver"}
+OLD_TO_NEW = {"player": "player", "mob": "mob", "hide": "mob", "fiber": "fiber", "silver": "silver"}
 
 # --------------------------------------------------------------------------- HUD
 
