@@ -9,16 +9,27 @@ from albot.config import NavigationConfig, load
 from albot.geometry import Point
 from albot.navigation import NavigateTo, ScaledWalkGrid, WalkGrid, Zone
 from tools.zone.tabmap_mask import (Parameters, build, check_live_registration, load_sample,
-                                    project, read_image, segment, write_outputs)
+                                    project, read_image, segment, write_outputs, apply_observations)
 
 
 FIXTURES = Path(__file__).parent / "fixtures/tabmap"
 
 
 @pytest.fixture(scope="module")
-def generated():
+def observations():
+    folder = Path(__file__).parent.parent / "assets/zones/fractured_ground"
+    return {name: json.loads((folder / name).read_text()) for name in ("walk_ne_fixes.json", "visited.json")}
+
+
+@pytest.fixture(scope="module")
+def generated(observations):
     samples = [load_sample(FIXTURES / f"fg_0{i}.png") for i in range(1, 4)]
-    return samples, build(samples, read_image(FIXTURES / "reference_old.png"))
+    folder = Path(__file__).parent.parent / "assets/zones/fractured_ground"
+    metadata = json.loads((folder / "zone.json").read_text())
+    return samples, build(samples, read_image(FIXTURES / "reference_old.png"), observations=observations,
+                           baseline=read_image(folder / "mask_before_basin.png")[:, :, 0] != 0,
+                           baseline_parameters=metadata["observation_baseline"]["parameters"],
+                           ordered_walks=["walk_ne_fixes.json"])
 
 
 def test_tab_terrain_transform_recovers_independent_live_fixes(generated):
@@ -90,7 +101,7 @@ def test_route_to_ne_uses_road_at_level_crossings_and_does_not_cut_cliff(generat
     assert crossings
     assert all(layers["road"][y, x] for x, y in crossings)
     assert any(p.dist(Point(241, 142)) < 4 for p in route)
-    assert not grid.line_clear((220, 125), (243, 143))
+    assert not grid.line_clear((240, 130), (255, 130))  # real level boundary, away from a ramp
 
 
 def test_scaled_grid_keeps_map_coordinates_overrides_clearance_and_private_blocks(tmp_path):
@@ -116,7 +127,7 @@ def test_both_levels_walkable_but_edges_rocks_and_grey_patches_blocked():
     p = Parameters(scale=2, road_half_width=1, rock_max_area=4)
     image = np.full((200, 200, 3), (120, 165, 225), np.uint8)
     image[50:150, 50:150] = (90, 130, 190)
-    image[80:92, 80:92] = (65, 90, 130)
+    image[80:92, 80:92] = (45, 65, 100)
     image[110:125, 80:95] = (150, 145, 125)
     image[115:128, 112:125] = (122, 139, 167)  # real capture's warm grey, HSV H~11/S~69
     image[95:100, 15:185] = (60, 160, 245)
@@ -125,7 +136,8 @@ def test_both_levels_walkable_but_edges_rocks_and_grey_patches_blocked():
     layers = segment(image, footprint, p)
     assert layers["walkable"][30, 30] and layers["walkable"][70, 70]
     assert not layers["walkable"][85, 85] and not layers["walkable"][116, 86]
-    assert layers["water"][120, 118] and not layers["walkable"][120, 118]
+    assert layers["grey"][120, 118] and not layers["water"][120, 118]
+    assert layers["walkable"][120, 118]  # observed neutral/warm-grey is not an obstacle class
     assert not layers["walkable"][50, 80]
     assert layers["road"][97, 50] and layers["walkable"][97, 50]
     assert np.any(layers["boundary"] & layers["road"] & layers["walkable"])
@@ -134,10 +146,11 @@ def test_both_levels_walkable_but_edges_rocks_and_grey_patches_blocked():
     assert wider["boundary"].sum() > layers["boundary"].sum()
 
 
-def test_generated_outputs_are_png_masks_and_neutral_override(tmp_path, generated):
+def test_generated_outputs_are_png_masks_and_neutral_override(tmp_path, generated, observations):
     _, (image, mask, layers, report) = generated
     metadata = json.loads((FIXTURES / "reference_old.json").read_text())
-    write_outputs(tmp_path, image, mask, layers, dict(report), metadata, reset_override=True)
+    write_outputs(tmp_path, image, mask, layers, dict(report), metadata, reset_override=True,
+                   observations=observations)
     assert np.array_equal(cv2.imread(str(tmp_path / "mask.png"), 0) != 0, mask)
     assert cv2.imread(str(tmp_path / "mask_hires.png"), 0).shape == (1440, 1600)
     assert cv2.imread(str(tmp_path / "mask_overlay.png")).shape == (1440, 1600, 3)
@@ -145,6 +158,9 @@ def test_generated_outputs_are_png_masks_and_neutral_override(tmp_path, generate
     zone = json.loads((tmp_path / "zone.json").read_text())
     assert zone["coordinate_space"] == "live_minimap" and zone["clearance"] == 1
     assert zone["portals"]["NE"]["approach"][1] > 123
+    validation = json.loads((tmp_path / "observation_validation.json").read_text())
+    assert validation["opened_native_cells"] == 18
+    assert validation["disc_radius"] == 1
     old_goal = list(zone["portals"]["NE"]["approach"])
     write_outputs(tmp_path, image, mask, layers, dict(report), zone)
     assert zone["portals"]["NE"]["approach"] == old_goal
@@ -156,3 +172,49 @@ def test_inconsistent_fixes_fail_independent_arrow_check(generated):
     wrong = [replace(sample, fix=sample.fix+np.array((0, 5))) for sample in samples]
     with pytest.raises(ValueError, match="independent arrow error"):
         build(wrong, read_image(FIXTURES / "reference_old.png"))
+
+
+def test_all_observed_fixes_are_directly_safe_and_every_walk_pair_plans(observations):
+    zone = Zone.load("fractured_ground")
+    assert len(observations["walk_ne_fixes.json"]) == 536
+    assert len(observations["visited.json"]) == 723
+    for points in observations.values():
+        assert all(zone.grid.is_safe(point) for point in points)
+    points = observations["walk_ne_fixes.json"]
+    for start, goal in zip(points, points[1:]):
+        route = zone.grid.plan(start, goal)
+        assert route
+        assert all(zone.grid.line_clear(a, b) for a, b in zip(route, route[1:]))
+    for start in ((221.6, 121.2), (220.2, 124.1)):
+        route = zone.grid.plan(start, zone.goal("portal:NE"))
+        assert route[-1].dist(zone.goal("portal:NE")) < 0.5
+
+
+def test_observation_discs_stay_tiny_and_report_prior_false_blocks(generated):
+    _, (_, _, layers, report) = generated
+    audit = report["observations"]
+    assert audit["before"]["walk_ne_fixes.json"]["unsafe"] == 267
+    assert audit["before"]["visited.json"]["unsafe"] == 374
+    assert audit["classifier"]["walk_ne_fixes.json"]["unsafe"] == 0
+    assert audit["classifier"]["visited.json"]["unsafe"] == 6
+    assert audit["opened_native_cells"] == int(layers["evidence"].sum()) == 18
+    assert audit["opened_map_area"] == 1.125
+    assert sum(d["opened_cells"] for d in audit["effective_discs"]) == 18
+    centers = np.array([d["center"] for d in audit["effective_discs"]])*4
+    for y, x in np.argwhere(layers["evidence"]):
+        assert np.min(np.linalg.norm(centers-[x, y], axis=1)) <= 4
+    assert all(value["unsafe"] == 0 for value in audit["after"].values())
+    assert all(not value["failed"] for value in audit["consecutive_pairs"].values())
+    stored = json.loads((Path(__file__).parent.parent / "assets/zones/fractured_ground/observation_validation.json").read_text())
+    assert stored == audit
+
+
+def test_observation_validation_rejects_unproven_large_discs_and_no_evidence(generated, observations):
+    _, (_, _, layers, _) = generated
+    raw = dict(layers, walkable=layers["walkable"] & ~layers["evidence"])
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        apply_observations(raw, observations, 4, 1, disc_radius=2)
+    with pytest.raises(ValueError, match="ordered walks"):
+        apply_observations(raw, observations, 4, 1, ordered_walks=["missing.json"])
+    with pytest.raises(ValueError, match="blocked or disconnected"):
+        apply_observations(raw, observations, 4, 1, disc_radius=0)

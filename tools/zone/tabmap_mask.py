@@ -24,13 +24,14 @@ if __package__ in (None, ""):
 @dataclass
 class Parameters:
     scale: int = 4
-    rim_margin: float = 10.0
+    rim_margin: float = 15.0
     ground_value: int = 165
-    level_value: int = 205
-    boundary_width: float = 0.5  # minimap pixels, before runtime wall clearance
-    dark_rock_value: int = 160
-    rock_max_area: float = 10.0  # small isolated dark-level blobs, in map pixels squared
+    level_value: int = 215
+    boundary_width: float = 0.25  # minimap pixels, before runtime wall clearance
+    dark_rock_value: int = 120
+    rock_max_area: float = 0.0  # size alone is not evidence of an obstacle
     water_saturation: int = 75
+    block_neutral_grey: bool = False  # observed basin fixes cross these warm-grey patches
     road_saturation: int = 135
     road_value: int = 210
     road_gap: float = 4.0
@@ -174,7 +175,7 @@ def kernel(radius, scale):
 
 
 def segment(image, footprint, params: Parameters):
-    """Both flat levels are open; block their boundaries, rock blobs and grey patches."""
+    """Both levels and observed neutral-grey floor are open; retain cliff/blue/dark candidates."""
     p, scale = params, params.scale
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     ground = cv2.inRange(hsv, (5, 40, p.ground_value), (28, 190, 255)) & footprint
@@ -194,8 +195,10 @@ def segment(image, footprint, params: Parameters):
         if stats[i, 4] <= p.rock_max_area*scale*scale:
             rock[labels == i] = 255
     # The map's grey rocks can be warm-grey (H~11, S~69), not just blue-grey.
-    water = cv2.inRange(hsv, (0, 0, 40), (180, p.water_saturation, 230))
-    water |= cv2.inRange(hsv, (40, 0, 40), (140, 255, 230))
+    grey = cv2.inRange(hsv, (0, 0, 40), (180, p.water_saturation, 230))
+    water = cv2.inRange(hsv, (40, 0, 40), (140, 255, 230))
+    if p.block_neutral_grey:
+        water |= grey
     road = cv2.inRange(hsv, (7, p.road_saturation, p.road_value), (23, 255, 255)) & footprint
     count, labels, stats, _ = cv2.connectedComponentsWithStats(road)
     long_roads = np.zeros_like(road)
@@ -217,11 +220,93 @@ def segment(image, footprint, params: Parameters):
     road = cv2.dilate(long_roads, kernel(p.road_half_width, scale)) & inside
     walkable = (inside != 0) & (boundary == 0) & (rock == 0) & (water == 0)
     walkable |= road != 0  # a road crossing a level boundary is a ramp
-    return {"inside": inside != 0, "boundary": boundary != 0, "rock": rock != 0,
+    return {"inside": inside != 0, "boundary": boundary != 0, "rock": rock != 0, "grey": grey != 0,
             "water": water != 0, "road": road != 0, "walkable": walkable}
 
 
-def build(samples, reference, params=None):
+def measure_observations(walkable, observations, scale, clearance, layers=None):
+    from albot.navigation import ScaledWalkGrid
+    grid = ScaledWalkGrid(walkable, scale, clearance)
+    result = {}
+    for name, points in observations.items():
+        native = np.rint(np.asarray(points)*scale).astype(int)
+        x, y = native[:, 0], native[:, 1]
+        stats = {"samples": len(points), "unsafe": int(np.count_nonzero(~grid.safe[y, x]))}
+        if layers is not None:
+            stats["near_classes"] = {}
+            for kind in ("boundary", "rock", "water", "grey"):
+                near = cv2.dilate(layers[kind].astype(np.uint8), kernel(clearance, scale))
+                stats["near_classes"][kind] = int(np.count_nonzero(near[y, x]))
+        result[name] = stats
+    return result
+
+
+def apply_observations(layers, observations, scale, clearance, disc_radius=1.0, ordered_walks=()):
+    """Small observed-position discs are explicit evidence, not colour guesses."""
+    from albot.navigation import ScaledWalkGrid
+    if not 0 <= disc_radius <= 1.0:
+        raise ValueError("observation discs must be between 0 and 1 minimap pixel")
+    if any(name not in observations for name in ordered_walks):
+        raise ValueError("ordered walks must name an observed-fixes source")
+    for name, points in observations.items():
+        points = np.asarray(points, float)
+        if (points.ndim != 2 or points.shape[1] != 2 or not len(points) or not np.isfinite(points).all()
+                or (points < 0).any() or (points[:, 0] >= 400).any() or (points[:, 1] >= 360).any()):
+            raise ValueError(f"{name}: expected finite observed positions inside 400x360")
+        native = np.rint(points*scale).astype(int)
+        if (native[:, 0] >= layers["walkable"].shape[1]).any() or (native[:, 1] >= layers["walkable"].shape[0]).any():
+            raise ValueError(f"{name}: observed position rounds outside the mask")
+    before = layers["walkable"].copy()
+    report = {"classifier": measure_observations(before, observations, scale, clearance, layers),
+              "disc_radius": disc_radius, "native_scale": scale, "effective_discs": [],
+              "ordered_walks": list(ordered_walks)}
+    walkable = before.astype(np.uint8)
+    # Apply to every observed fix; report only discs that actually opened cells.
+    for points in observations.values():
+        if not disc_radius:
+            break
+        for point in np.rint(np.asarray(points)*scale).astype(int):
+            radius = math.ceil(disc_radius*scale)
+            x, y = point
+            x0, y0 = max(0, x-radius), max(0, y-radius)
+            x1, y1 = min(walkable.shape[1], x+radius+1), min(walkable.shape[0], y+radius+1)
+            disc = np.zeros((y1-y0, x1-x0), np.uint8)
+            cv2.circle(disc, (x-x0, y-y0), radius, 1, -1)
+            # Observed standing positions supersede the estimated ground edge too.
+            # Cropping by `inside` here would preserve the same false boundary.
+            patch = walkable[y0:y1, x0:x1]
+            opened = (disc != 0) & (patch == 0)
+            if opened.any():
+                report["effective_discs"].append({"center": (point/scale).tolist(),
+                                                   "opened_cells": int(opened.sum())})
+                patch |= disc
+    layers = dict(layers)
+    layers["evidence"] = (walkable != 0) & ~before
+    layers["walkable"] = walkable != 0
+    report["opened_native_cells"] = int(layers["evidence"].sum())
+    report["opened_map_area"] = report["opened_native_cells"]/(scale*scale)
+    report["after"] = measure_observations(layers["walkable"], observations, scale, clearance)
+    grid = ScaledWalkGrid(layers["walkable"], scale, clearance)
+    # Four-neighbour connectivity is also exactly the connectivity of A* with
+    # diagonal corner cutting forbidden. Validate every consecutive fix pair.
+    _, labels = cv2.connectedComponents(grid.safe.astype(np.uint8), connectivity=4)
+    report["consecutive_pairs"] = {}
+    for name, points in observations.items():
+        if report["after"][name]["unsafe"]:
+            raise ValueError(f"{name}: observed fixes still blocked or disconnected after bounded evidence discs")
+        if name not in ordered_walks:
+            continue
+        native = np.rint(np.asarray(points)*scale).astype(int)
+        ids = labels[native[:, 1], native[:, 0]]
+        failures = np.flatnonzero((ids[:-1] != ids[1:]) | (ids[:-1] == 0) | (ids[1:] == 0))
+        report["consecutive_pairs"][name] = {"checked": max(0, len(points)-1), "failed": failures.tolist()}
+        if len(failures):
+            raise ValueError(f"{name}: observed fixes still blocked or disconnected after bounded evidence discs")
+    return layers, report
+
+
+def build(samples, reference, params=None, observations=None, disc_radius=1.0,
+          baseline=None, baseline_parameters=None, ordered_walks=()):
     p = params or Parameters()
     if (p.scale < 1 or p.rim_margin < 0 or p.boundary_width < 0 or p.rock_max_area < 0 or p.road_gap < 0
             or p.road_half_width < 0 or not 0 < p.ground_value <= p.level_value <= 255
@@ -249,6 +334,21 @@ def build(samples, reference, params=None):
     # Exclude the tan decorative rim before finding the largest ground component.
     footprint = cv2.erode(outer_footprint, kernel(p.rim_margin, p.scale))
     layers = segment(image, footprint, p)
+    if observations:
+        layers, validation = apply_observations(layers, observations, p.scale, 1.0, disc_radius, ordered_walks)
+        before_stats = None
+        if baseline is not None:
+            if baseline.shape != layers["walkable"].shape:
+                raise ValueError("baseline mask dimensions must match the generated planning mask")
+            previous = None
+            if baseline_parameters is not None:
+                old = Parameters(**baseline_parameters)
+                previous = segment(image, cv2.erode(outer_footprint, kernel(old.rim_margin, p.scale)), old)
+                validation["baseline_parameters"] = dataclasses.asdict(old)
+            before_stats = measure_observations(baseline, observations, p.scale, 1.0, previous)
+        if before_stats is not None:
+            validation["before"] = before_stats
+        report["observations"] = validation
     image[outer_footprint == 0] = 0
     mask = cv2.resize(layers["walkable"].astype(np.uint8)*255, (400, 360), interpolation=cv2.INTER_AREA) >= 128
     report.update(tab_to_map=matrix.tolist(), arrow_checks=checks, parameters=dataclasses.asdict(p),
@@ -263,7 +363,8 @@ def write_png(path, image):
         raise OSError(f"could not write {path}")
 
 
-def write_outputs(output, image, mask, layers, report, metadata, reset_override=False):
+def write_outputs(output, image, mask, layers, report, metadata, reset_override=False,
+                  observations=None, baseline=None):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     scale = report["parameters"]["scale"]
@@ -284,6 +385,8 @@ def write_outputs(output, image, mask, layers, report, metadata, reset_override=
     route = []
     if "NE" in metadata["portals"]:
         start = report["arrow_checks"][0]["live_fix"]
+        if observations and report.get("observations", {}).get("ordered_walks"):
+            start = observations[report["observations"]["ordered_walks"][0]][0]
         route = ScaledWalkGrid(layers["walkable"], scale, clearance=metadata["clearance"]).plan(
             start, metadata["portals"]["NE"]["approach"])
         report["route_check"] = {"start": start, "goal": metadata["portals"]["NE"]["approach"],
@@ -294,14 +397,33 @@ def write_outputs(output, image, mask, layers, report, metadata, reset_override=
     write_png(output / "road.png", cv2.resize(layers["road"].astype(np.uint8)*255, (400, 360), interpolation=cv2.INTER_AREA))
     if reset_override:
         write_png(output / "override.png", np.full((360, 400), 128, np.uint8))
-    (output / "zone.json").write_text(json.dumps(metadata, indent=2)+"\n", encoding="utf-8")
     (output / "transform.json").write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
+    if observations:
+        metadata["observed_fixes"] = list(observations)
+        metadata["observed_walks"] = report["observations"]["ordered_walks"]
+        for name, points in observations.items():
+            path = output / name
+            if not path.exists() or json.loads(path.read_text()) != points:
+                path.write_text(json.dumps(points)+"\n", encoding="utf-8")
+        (output / "observation_validation.json").write_text(json.dumps(report["observations"], indent=2)+"\n", encoding="utf-8")
+        if baseline is not None:
+            name = metadata.get("observation_baseline", {}).get("mask", "mask_before_basin.png")
+            write_png(output / name, baseline.astype(np.uint8)*255)
+    (output / "zone.json").write_text(json.dumps(metadata, indent=2)+"\n", encoding="utf-8")
     overlay = image.copy()
     blocked = layers["inside"] & ~layers["walkable"]
     overlay[blocked] = (overlay[blocked]*0.4+np.array((30, 30, 230))*0.6).astype(np.uint8)
     road = layers["road"]
     overlay[road] = (overlay[road]*0.5+np.array((40, 220, 40))*0.5).astype(np.uint8)
     overlay[~layers["inside"]] //= 4
+    if "observations" in report:
+        overlay[layers["evidence"]] = (255, 0, 255)
+        for disc in report["observations"]["effective_discs"]:
+            point = tuple(np.rint(np.asarray(disc["center"])*scale).astype(int))
+            cv2.circle(overlay, point, round(report["observations"]["disc_radius"]*scale), (255, 0, 255), 1)
+        count = report["observations"]["opened_native_cells"]
+        cv2.putText(overlay, f"magenta: observed-position discs; {count} native cells opened", (25, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 255), 1, cv2.LINE_AA)
     for i, check in enumerate(report["arrow_checks"]):
         point = tuple(np.rint(np.asarray(check["live_fix"])*scale).astype(int))
         cv2.circle(overlay, point, 4, (255, 255, 0), 1)
@@ -326,16 +448,39 @@ def main(argv=None):
     parser.add_argument("--metadata", default="assets/zones/fractured_ground/zone.json")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--reset-override", action="store_true", help="replace mixed legacy override with neutral grey")
+    parser.add_argument("--observed-fixes", nargs="+", help="live-space fix files; defaults to zone.json observed_fixes")
+    parser.add_argument("--ordered-walks", nargs="*", help="observed filenames whose consecutive fixes must connect")
+    parser.add_argument("--disc-radius", type=float, default=1.0, help="last-resort observed disc radius, at most 1 map px")
+    parser.add_argument("--baseline-mask", help="previous high-resolution mask for the audit report")
     for field in dataclasses.fields(Parameters):
-        parser.add_argument("--"+field.name.replace("_", "-"), type=type(field.default), default=field.default)
+        if isinstance(field.default, bool):
+            parser.add_argument("--"+field.name.replace("_", "-"), action=argparse.BooleanOptionalAction,
+                                default=field.default)
+        else:
+            parser.add_argument("--"+field.name.replace("_", "-"), type=type(field.default), default=field.default)
     args = parser.parse_args(argv)
     if args.fixes and len(args.fixes) != len(args.captures):
         parser.error("--fixes must have one entry per capture")
     samples = [load_sample(path, args.fixes[i] if args.fixes else None) for i, path in enumerate(args.captures)]
     parameters = Parameters(**{f.name: getattr(args, f.name) for f in dataclasses.fields(Parameters)})
-    image, mask, layers, report = build(samples, read_image(args.reference), parameters)
     metadata = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
-    write_outputs(args.out_dir, image, mask, layers, report, metadata, args.reset_override)
+    paths = args.observed_fixes if args.observed_fixes is not None else [Path(args.metadata).parent / p
+                                                                     for p in metadata.get("observed_fixes", [])]
+    observations = {Path(path).name: json.loads(Path(path).read_text()) for path in paths}
+    if len(observations) != len(paths):
+        raise ValueError("observed fix files must have distinct names")
+    baseline_info = metadata.get("observation_baseline", {})
+    baseline_path = args.baseline_mask or (Path(args.metadata).parent / baseline_info["mask"]
+                                           if "mask" in baseline_info else None)
+    baseline = cv2.imread(str(baseline_path), cv2.IMREAD_GRAYSCALE) if baseline_path else None
+    if baseline_path and baseline is None:
+        raise ValueError(f"cannot read baseline mask: {baseline_path}")
+    if baseline is not None:
+        baseline = baseline != 0
+    image, mask, layers, report = build(samples, read_image(args.reference), parameters, observations,
+                                       args.disc_radius, baseline, baseline_info.get("parameters"),
+                                       args.ordered_walks if args.ordered_walks is not None else metadata.get("observed_walks", []))
+    write_outputs(args.out_dir, image, mask, layers, report, metadata, args.reset_override, observations, baseline)
     print(json.dumps(report, indent=2))
     print(f"mask/overlay written to {args.out_dir}")
     return 0
