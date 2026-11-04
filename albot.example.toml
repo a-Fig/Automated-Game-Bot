@@ -159,11 +159,14 @@ waypoint_tolerance = 2.0
 click_min = 250.0              # screen pixels from player_screen
 click_max = 400.0
 safe_screen_rect = [400, 200, 1800, 1100]  # excludes HUD; never clamp x/y independently
-stuck_seconds = 4.0            # no reduction in distance to the next waypoint
+stuck_seconds = 4.0            # no actual displacement; curved local paths count as progress
 progress_pixels = 0.8          # ignore subpixel arrow jitter
-side_step_seconds = 1.0        # one perpendicular click, then replan
-stuck_block_radius = 3         # block intended stuck point in this task's private mask
-max_replans = 3                # then stop proposing clicks, rather than loop forever
+side_step_seconds = 1.0        # legacy setting; travel now replans without a short sidestep
+stuck_block_radius = 3         # radius for grouping repeated stalls at the same spot
+max_replans = 8                # per spot; failures elsewhere don't exhaust the journey
+learned_edge_length = 6.0      # short transverse wall segment ahead of a stall, in map pixels
+# Real travel learns to assets/zones/<zone>/learned.json (gitignored, atomic writes).
+# Standing fixes open radius-1 discs; learned edges protect all observed player cells.
 trail_spacing = 0.5            # minimap pixels between observed journey breadcrumbs
 trail_limit = 128              # keep this many actual visited positions for retreat
 retreat_tolerance = 0.35       # a breadcrumb is reached within this minimap radius

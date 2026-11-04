@@ -244,6 +244,7 @@ def measure_observations(walkable, observations, scale, clearance, layers=None):
 def apply_observations(layers, observations, scale, clearance, disc_radius=1.0, ordered_walks=()):
     """Small observed-position discs are explicit evidence, not colour guesses."""
     from albot.navigation import ScaledWalkGrid
+    from albot.navigation_evidence import open_observed_disc
     if not 0 <= disc_radius <= 1.0:
         raise ValueError("observation discs must be between 0 and 1 minimap pixel")
     if any(name not in observations for name in ordered_walks):
@@ -266,20 +267,12 @@ def apply_observations(layers, observations, scale, clearance, disc_radius=1.0, 
         if not disc_radius:
             break
         for point in np.rint(np.asarray(points)*scale).astype(int):
-            radius = math.ceil(disc_radius*scale)
-            x, y = point
-            x0, y0 = max(0, x-radius), max(0, y-radius)
-            x1, y1 = min(walkable.shape[1], x+radius+1), min(walkable.shape[0], y+radius+1)
-            disc = np.zeros((y1-y0, x1-x0), np.uint8)
-            cv2.circle(disc, (x-x0, y-y0), radius, 1, -1)
             # Observed standing positions supersede the estimated ground edge too.
             # Cropping by `inside` here would preserve the same false boundary.
-            patch = walkable[y0:y1, x0:x1]
-            opened = (disc != 0) & (patch == 0)
-            if opened.any():
+            opened = open_observed_disc(walkable, point/scale, scale, disc_radius)
+            if opened:
                 report["effective_discs"].append({"center": (point/scale).tolist(),
-                                                   "opened_cells": int(opened.sum())})
-                patch |= disc
+                                                   "opened_cells": opened})
     layers = dict(layers)
     layers["evidence"] = (walkable != 0) & ~before
     layers["walkable"] = walkable != 0

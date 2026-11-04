@@ -19,6 +19,7 @@ import numpy as np
 
 from .config import NavigationConfig
 from .geometry import Point
+from .navigation_evidence import LearnedEvidence
 
 log = logging.getLogger(__name__)
 
@@ -327,6 +328,8 @@ class Zone:
     folder: Path
     metadata: dict
     grid: WalkGrid
+    evidence: LearnedEvidence | None = None
+    base_grid: WalkGrid | None = None
 
     @classmethod
     def load(cls, name: str, config: NavigationConfig | None = None):
@@ -352,7 +355,10 @@ class Zone:
         x0, y0, x1, y1 = cfg.minimap_rect
         if grid.mask.shape != ((y1-y0)*scale, (x1-x0)*scale):
             raise ValueError("zone mask and minimap crop must have the same dimensions")
-        return cls(name, folder, metadata, grid)
+        evidence = LearnedEvidence(folder / "learned.json", name, (x1-x0, y1-y0), scale)
+        base = grid.copy_with(clearance, cfg.snap_radius)
+        evidence.apply(grid)
+        return cls(name, folder, metadata, grid, evidence, base)
 
     def goal(self, target) -> Point:
         if isinstance(target, str):
@@ -431,37 +437,63 @@ class NavigateTo:
     allowed for a dry-run preview.
     """
     def __init__(self, goal, zone: Zone | None = None, config: NavigationConfig | None = None,
-                 allow_uncalibrated: bool = False):
+                 allow_uncalibrated: bool = False, learn: bool = False):
         self.config = config or NavigationConfig()
         if (self.config.lookahead <= 0 or self.config.arrival_tolerance <= 0
                 or self.config.waypoint_tolerance <= 0 or self.config.stuck_seconds <= 0
                 or self.config.side_step_seconds < 0 or self.config.progress_pixels <= 0
                 or self.config.map_speed_px_per_s <= 0 or self.config.stuck_block_radius < 1
-                or self.config.max_replans < 0):
+                or self.config.max_replans < 0 or not math.isfinite(self.config.learned_edge_length)
+                or self.config.learned_edge_length <= 0):
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
+        size = (self.zone.grid.mask.shape[1]//self.zone.grid.scale,
+                self.zone.grid.mask.shape[0]//self.zone.grid.scale)
+        self.evidence = (self.zone.evidence or LearnedEvidence(None, self.zone.name, size,
+                                                              self.zone.grid.scale)).copy(persist=learn)
+        self.hazards = []
         self.grid = self._fresh_grid()
         self.locator = MapLocator(self.config, self.zone.metadata["terrain_polygon"])
         self.allow_uncalibrated = allow_uncalibrated
         self.route: list[Point] = []
         self.index = 1
-        self.best_distance = math.inf
         self.progress_at = None
-        self.side_step_at = None
-        self.stuck_point = None
         self.replans = 0
+        self.stalls = []
+        self.motion_anchor = None
         self.failed = False
+        self.failed_point = None
         self.last_tick = None
 
     def _fresh_grid(self):
-        return self.zone.grid.copy_with(self.config.clearance if self.config.clearance is not None
-                                        else self.zone.grid.clearance, self.config.snap_radius)
+        base = self.zone.base_grid or self.zone.grid
+        grid = base.copy_with(self.config.clearance if self.config.clearance is not None
+                             else self.zone.grid.clearance, self.config.snap_radius)
+        self.evidence.apply(grid)
+        for point, radius in self.hazards:
+            grid.block(point, radius)
+        return grid
+
+    def block_hazard(self, point, radius):
+        # Standing is evidence of walkability, not evidence that an attacker
+        # left. Keep retreat's temporary danger areas separate from terrain.
+        self.hazards.append((point, radius))
+        self.grid.block(point, radius)
+
+    def record_position(self, location):
+        """Dispatcher calls only for fixes obtained while real travel was moving."""
+        if location is not None and self.evidence.observe(location.point):
+            was_safe = self.grid.is_safe(location.point)
+            self.grid = self._fresh_grid()
+            if not was_safe:
+                self.route = []
 
     def _plan(self, start, now):
         self.route = self.grid.plan(start, self.goal)
         self.index = 1
-        self.best_distance, self.progress_at = math.inf, now
+        self.progress_at = now
+        self.motion_anchor = Point(*start)
 
     def _clear_from(self, point, target) -> bool:
         """Line check from the player's exact spot or from its grid cell.
@@ -475,7 +507,7 @@ class NavigateTo:
         cell = Point(round(point.x*scale)/scale, round(point.y*scale)/scale)
         return self.grid.line_clear(point, target) or self.grid.line_clear(cell, target)
 
-    def tick(self, frame, now: float) -> NavigationStep:
+    def tick(self, frame, now: float, moving: bool = False) -> NavigationStep:
         if self.last_tick is not None and now < self.last_tick:
             raise ValueError("navigation timestamps must increase")
         gap = now-self.last_tick if self.last_tick is not None else 0
@@ -486,6 +518,10 @@ class NavigateTo:
             self.progress_at = None
             return NavigationStep("lost", message="minimap arrow missing or ambiguous; no click")
         point = location.point
+        if moving:
+            self.record_position(location)
+        if self.failed_point is not None and point.dist(self.failed_point) > self.config.stuck_block_radius:
+            self.failed, self.failed_point = False, None
         if point.dist(self.goal) <= self.config.arrival_tolerance:
             return NavigationStep("arrived", location, waypoints=tuple(self.route))
         if not self.grid.is_safe(point) and self._fresh_grid().is_safe(point):
@@ -514,35 +550,19 @@ class NavigateTo:
         if self.failed:
             return NavigationStep("stalled", location, message="replan limit reached; no click")
         if self.progress_at is None or gap > 2:
-            self.progress_at, self.best_distance = now, math.inf
+            self.progress_at = now
+            self.motion_anchor = point
         try:
             if not self.route:
                 self._plan(point, now)
             while self.index < len(self.route) and point.dist(self.route[self.index]) <= self.config.waypoint_tolerance:
                 self.index += 1
-                self.best_distance, self.progress_at = math.inf, now
+                self.progress_at = now
             if self.index >= len(self.route):
                 return NavigationStep("no_route", location, waypoints=tuple(self.route),
                                       message="snapped route ends outside arrival tolerance; adjust goal/mask")
             if not self.config.calibrated and not self.allow_uncalibrated:
                 return NavigationStep("uncalibrated", location, waypoints=tuple(self.route))
-            if self.side_step_at is not None:
-                if now-self.side_step_at < self.config.side_step_seconds:
-                    return NavigationStep("waiting", location, waypoints=tuple(self.route))
-                saved = self.grid.mask.copy()
-                self.grid.block(self.stuck_point, self.config.stuck_block_radius)
-                try:
-                    self._plan(point, now)
-                except ValueError:
-                    # On a thin corridor the block can cut the only way through
-                    # (live 2026-11-04). Keep the old mask and just replan.
-                    self.grid.mask[...] = saved
-                    self.grid._inflate()
-                    self._plan(point, now)
-                self.side_step_at = None
-                self.replans += 1
-            if self.index >= len(self.route):
-                return NavigationStep("no_route", location, message="no route within arrival tolerance")
             if not self._clear_from(point, self.route[self.index]):
                 self._plan(point, now)
             if (self.index >= len(self.route)
@@ -550,31 +570,32 @@ class NavigateTo:
                 return NavigationStep("no_route", location, message="no clear segment from current position")
             target = self.route[self.index]
             distance = point.dist(target)
-            if distance < self.best_distance-self.config.progress_pixels:
-                self.best_distance, self.progress_at = distance, now
+            # Click-to-move bends around rocks. Actual displacement counts as
+            # progress even when it temporarily moves away from the waypoint.
+            if self.motion_anchor is None or point.dist(self.motion_anchor) >= self.config.progress_pixels:
+                self.motion_anchor = point
+                self.progress_at = now
             dx, dy = target.x-point.x, target.y-point.y
             scale = min(1.0, self.config.lookahead / max(distance, 1e-9))
             delta = Point(dx*scale, dy*scale)
             if now-self.progress_at >= self.config.stuck_seconds:
-                if self.replans >= self.config.max_replans:
+                attempts = sum(point.dist(old) <= self.config.stuck_block_radius for old in self.stalls)
+                if attempts >= self.config.max_replans:
                     self.failed = True
+                    self.failed_point = point
                     return NavigationStep("stalled", location, waypoints=tuple(self.route))
-                # Block far enough ahead that the blocked circle plus clearance
-                # can't cover the player's own cell (seen live: a waypoint 2 px
-                # ahead got blocked, and every later tick was no_route).
-                reach = self.config.stuck_block_radius + self.grid.clearance + 1
-                ahead = max(1.0, reach / max(math.hypot(delta.x, delta.y), 1e-9))
-                self.stuck_point = Point(point.x+delta.x*ahead, point.y+delta.y*ahead)
-                self.side_step_at = now
-                for sign in (1, -1):
-                    side = Point(-delta.y*sign, delta.x*sign)
-                    end = Point(point.x+side.x, point.y+side.y)
-                    if self.grid.line_clear(point, end):
-                        click = screen_click(side, self.config)
-                        if click is not None:
-                            return NavigationStep("sidestep", location, click, tuple(self.route))
+                self.stalls.append(point)
+                self.replans += 1
+                blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length, now)
+                self.grid = self._fresh_grid()
+                log.warning("navigation: stall at %.2f,%.2f toward %.2f,%.2f; edge=%s; replan %d at spot",
+                            point.x, point.y, target.x, target.y, blocked, attempts+1)
+                self._plan(point, now)
+                # Return without a side-step click; next fresh tick follows the
+                # alternative route through the normal guarded dispatch path.
                 return NavigationStep("waiting", location, waypoints=tuple(self.route),
-                                      message="no clear perpendicular sidestep; will replan")
+                                      message=("stalled direction blocked; replanned around learned edge" if blocked
+                                               else "stall target too close to block safely; replanned"))
             click = screen_click(delta, self.config)
             return NavigationStep("move" if click is not None else "unsafe_click", location,
                                   click, tuple(self.route))

@@ -66,6 +66,10 @@ Zones without their own clearance still default to 2.0.
 
 ## Basin ground truth
 
+Runtime travel learning is separate: gitignored `learned.json` holds new standing
+discs and suspected stall edges. Zone.load applies it without modifying these
+generated assets. See docs/NAVIGATION.md for persistence, reset and log replay.
+
 The previous classifier rejected 267/536 hand-walk samples and 374/723 visited
 samples. Its "water" rule confused warm/neutral grey with impassable water. Its
 dark threshold and small-blob rule also rejected traversed floor, and a brightness

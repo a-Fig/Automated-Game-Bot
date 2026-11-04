@@ -242,7 +242,7 @@ class Travel(Behavior):
             self._wait(ctx)
             return True
         self.timestamp = status.timestamp
-        step = self.task.tick(frame, ctx.now())
+        step = self.task.tick(frame, ctx.now(), moving=ctx.travel_moving)
         # Models/health can publish while path planning runs. Never dispatch a
         # proposal without rechecking both safety and the higher-priority plans.
         ctx.check_safety()
@@ -302,12 +302,13 @@ class Travel(Behavior):
 
     def _start_task(self, ctx, goal):
         from .navigation import NavigateTo
+        from .actuator import DryRunInput
         n = ctx.config.navigation
         if (n.trail_spacing <= 0 or n.trail_limit < 2 or n.retreat_tolerance <= 0
                 or n.attack_repeat_radius <= 0 or n.attack_block_radius < 1):
             raise ValueError("invalid travel retreat trail settings")
         ctx.stop_travel()
-        self.task = NavigateTo(goal, config=n)
+        self.task = NavigateTo(goal, config=n, learn=not isinstance(ctx.input, DryRunInput))
         self.goal, self.timestamp = goal, None
         self.trail, self.attack_spots, self.blocked_spots = [], [], []
         self.retreat_episode = None
@@ -330,11 +331,13 @@ class Travel(Behavior):
             self._wait(ctx)
             return True
         point = location.point
+        if ctx.travel_moving:
+            self.task.record_position(location)
         if self.retreat_episode != guard.retreat_started:
             self.retreat_episode = guard.retreat_started
             self.retreat_index = len(self.trail)-1
             if any(point.dist(old) <= n.attack_repeat_radius for old in self.attack_spots):
-                self.task.grid.block(point, n.attack_block_radius)
+                self.task.block_hazard(point, n.attack_block_radius)
                 self.blocked_spots.append(point)
                 self.blocked_spots = self.blocked_spots[-n.trail_limit:]
                 self.task.route = []

@@ -199,7 +199,8 @@ class NavigationConfig:
     progress_pixels: float = 0.8
     side_step_seconds: float = 1.0
     stuck_block_radius: int = 3
-    max_replans: int = 3
+    max_replans: int = 8  # per spot, not a budget shared by the whole journey
+    learned_edge_length: float = 6.0
     trail_spacing: float = 0.5
     trail_limit: int = 128
     retreat_tolerance: float = 0.35

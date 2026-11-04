@@ -243,19 +243,17 @@ def test_uncalibrated_task_and_lost_fix_never_propose_input():
     assert step.status == "lost" and step.click is None
 
 
-def test_stuck_sidestep_once_then_block_and_replan():
+def test_stuck_blocks_an_edge_and_replans_without_sidestep():
     nav = task()
     for t in [0, 1, 2, 3]:
         assert nav.tick(frame_at(), t).status == "move"
     step = nav.tick(frame_at(), 4.1)
-    assert step.status == "sidestep" and step.click is not None
-    old_point = nav.stuck_point
-    assert abs(step.click.x-nav.config.player_screen[0]) < 30
-    assert nav.tick(frame_at(), 4.5).status == "waiting"
-    nav.tick(frame_at(), 5.2)
+    assert step.status == "waiting" and step.click is None
+    assert nav.tick(frame_at(), 4.5).status == "move"
     assert nav.replans == 1
-    assert not nav.grid.mask[round(old_point.y), round(old_point.x)]
-    assert nav.zone.grid.mask[round(old_point.y), round(old_point.x)]  # task-local block
+    assert np.any(nav.zone.grid.mask & ~nav.grid.mask)
+    assert len(nav.evidence.edges) == 1
+    assert nav.grid.is_safe(step.location.point)
 
 
 def test_stuck_recovery_is_bounded_and_lost_time_does_not_count():
@@ -371,20 +369,24 @@ def test_stuck_block_never_covers_the_players_own_cell():
     nav = task(cfg)
     for t in range(5):
         nav.tick(frame_at(), t)
-    assert nav.side_step_at is not None
-    step = nav.tick(frame_at(), 6)  # sidestep wait over: block the stuck point, replan
+    assert nav.evidence.edges
+    step = nav.tick(frame_at(), 6)  # next tick follows the alternative without a sidestep
     assert nav.grid.is_safe(step.location.point) and step.status == "move"
 
 
-def test_stuck_block_that_cuts_the_only_route_is_undone():
+def test_learned_edge_without_an_alternative_stops_instead_of_retrying_it():
     nav = task()
+    nav.config.learned_edge_length = 359  # cut the only route across this synthetic map
+    nav.grid.mask[:144] = False
+    nav.grid.mask[147:] = False
+    nav.grid.clearance = 0
+    nav.grid._inflate()
+    nav.zone.grid = nav.grid.copy_with(0, 8)
     for t in range(5):
-        nav.tick(frame_at(), t)
-    assert nav.side_step_at is not None
-    real_block = nav.grid.block
-    nav.grid.block = lambda point, radius: real_block(point, 60)  # cuts everything nearby
+        step = nav.tick(frame_at(), t)
+    assert step.status == "no_route"
     step = nav.tick(frame_at(), 6)
-    assert step.status == "move" and step.click is not None
+    assert step.status == "no_route" and step.click is None
     assert nav.grid.is_safe(step.location.point)
 
 

@@ -5,3 +5,5 @@ albot.toml
 albot.log
 replay_out/
 training_data/
+assets/zones/*/learned.json
+assets/zones/*/learned.json.tmp

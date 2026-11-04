@@ -48,17 +48,24 @@ def see(w, predictions=()):
 def fake_navigation(monkeypatch, steps):
     calls = []
     class FakeNavigate:
-        def __init__(self, goal, config):
+        def __init__(self, goal, config, learn=False):
             calls.append(("init", goal, config.calibrated))
             self.position = Location(235, 145, None, 0.9)
             self.locator = SimpleNamespace(locate=lambda frame, now: self.position)
             self.grid = WalkGrid(np.ones((360, 400), bool))
             self.route = []
-        def tick(self, frame, now):
+        def record_position(self, location):
+            calls.append(("observe", location))
+        def block_hazard(self, point, radius):
+            self.grid.block(point, radius)
+        def tick(self, frame, now, moving=False):
             calls.append(("tick", now))
             step = steps.pop(0)
             result = step() if callable(step) else step
-            return replace(result, location=self.position) if result.location is None else result
+            result = replace(result, location=self.position) if result.location is None else result
+            if moving:
+                self.record_position(result.location)
+            return result
     monkeypatch.setattr("albot.navigation.NavigateTo", FakeNavigate)
     return calls
 
@@ -218,7 +225,8 @@ def test_arrival_clears_goal_without_any_more_input_that_tick(monkeypatch, caplo
         w.tick()
     assert w.config.behavior.travel_goal == ""
     assert not w.input.actions and not w.ctx.travel_moving
-    assert "travel arrived" in caplog.text and len(calls) == 3
+    assert "travel arrived" in caplog.text and len(calls) == 4
+    assert calls[-1][0] == "observe"
 
 
 def test_uncalibrated_travel_sends_no_click_and_does_not_fall_through_to_farm():

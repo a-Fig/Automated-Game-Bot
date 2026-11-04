@@ -107,7 +107,7 @@ from albot.config import load
 from albot.navigation import NavigateTo
 
 cfg = load("albot.toml")
-task = NavigateTo("portal:NE", config=cfg.navigation)  # or (250, 180)
+task = NavigateTo("portal:NE", config=cfg.navigation)  # or (250, 180); read-only by default
 step = task.tick(frame, time.monotonic())
 # step.status: move, sidestep, waiting, arrived, lost, uncalibrated,
 #              no_route, unsafe_click or stalled
@@ -131,11 +131,73 @@ Fractured Ground plans on the 4x Tab grid; every returned waypoint and controlle
 distance still uses the original 400x360 minimap coordinate space. Painted overrides
 remain 400x360 and are expanded with nearest-neighbour sampling before clearance.
 
-If distance to the next waypoint does not decrease for `stuck_seconds`, it proposes
-one perpendicular sidestep. After `side_step_seconds` it blocks the intended stuck
-point (not the current player cell) in a private task mask and replans. After
-`max_replans` it stops proposing clicks. Lost fixes do not count as stuck time.
+If actual displacement stays below `progress_pixels` for `stuck_seconds`, it records
+a suspected collision edge and replans without a short sidestep. A curved local
+click-to-move trajectory counts as progress even when it moves away from the next
+waypoint. `max_replans` now limits retries **per spot** (`stuck_block_radius` groups
+nearby stalls), rather than sharing a small budget across the journey. The default
+is 8; an old explicit 3 still means 3 per spot. Lost fixes and pauses over two
+seconds do not count as stuck time. `side_step_seconds` is accepted for old TOMLs
+but unused. A learned edge that disconnects the goal is retained and reported as
+no_route; the existing travel give-up timer then clears the goal safely.
 Arrival means near the portal's **approach point**, not a completed zone transfer.
+
+## Learned travel evidence
+
+Real travel saves `assets/zones/<zone>/learned.json` next to its zone assets (or in
+the custom assets folder). This file and its atomic-write temporary are gitignored;
+merges and mask regeneration leave it alone. Zone.load applies it after the base
+mask/painted override, before planning. Rename the file to reset learning, or remove
+individual `edges` entries to retract a mistaken collision. Keep a copy when
+changing map coordinates, zoom or UI calibration; the loader checks zone, size,
+scale and coordinate-space tags, but cannot detect an unreported coordinate shift.
+
+Every trusted arrow fix obtained while travel/retreat is moving contributes a
+radius-1-map-px observed-position disc, using the mask builder's same function.
+Discs are deduplicated by native cell (0.25 map px on Fractured Ground); repeated
+stationary readings do not grow the file. It saves when a new disc or stall is
+recorded, by replacing the JSON atomically. No straight-line corridor is inferred
+between fixes: Albion can walk around objects between captures.
+
+Each stall stores the player position, attempted waypoint, navigation timestamp
+and endpoints of a short transverse segment between them. `learned_edge_length`
+defaults to 6 map px; the segment is one native cell thick, not a blocked disc.
+It is placed ahead by at least clearance plus two native cells. Every stalled
+player position and recorded standing fix has a clearance halo cut out of inferred
+edge blocks, both immediately and on reload, so a guessed edge cannot imprison the
+player. A waypoint too close for safe placement is not blocked. A later standing
+fix contradicting an edge opens its local disc and protects that cell; it does not
+prove that the whole surrounding cliff is passable. Combat danger blocks stay
+separate, temporary, and survive terrain replans.
+
+Normal `nav --dry-run`, dry-run bot input and replay never write learned evidence.
+Standalone guarded dispatchers can opt into `NavigateTo(..., learn=True)` and call
+`tick(frame, now, moving=True)` only while previously dispatched movement is active.
+`record_position(location)` is available for their retreat path. Merely proposing
+a click is not evidence that movement occurred. The integrated travel behavior
+sets these flags through its existing input/safety path.
+
+## Offline position-log audit
+
+```powershell
+python tools/zone/replay_travel.py "C:\Users\smash\PycharmProjects\datasets\albion_v2\travel_runs\travel6.log" --bot-log "C:\Users\smash\PycharmProjects\datasets\albion_v2\travel_runs\run6.log" --to portal:NE --out replay_out/travel6.json
+```
+
+This reads logs and the zone only; it never captures or sends input or writes
+learned evidence. Omit `--out` to print JSON without saving a report.
+For each fix it prints a fresh mask plan and flags sideways/away movement and
+sample chords rejected by the mask. `--bot-log` excludes samples before travel's
+first move and after arrival/give-up, and reports the controller's stalled time.
+Sparse sample chords are not measured paths or the actual commanded clicks.
+
+The saved `docs/travel6_replay.json` audit shows the terminal stationary span from
+04:28:31 to 04:29:02 near (238.3,136.2), where fresh plans still aim at
+(239.75,140.75). The controller had already stalled at 04:28:35 and gave up at
+04:29:05, so the whole 31-second span was not active walking. Earlier fixes bend
+east/west while the planner keeps aiming south toward the ramp. These data refute
+that direct approach as reliable; they do not locate the true ramp or establish
+that every alternative road approach is blocked. Live learning will preserve
+failed approaches instead of repeating the same guessed corridor on restart.
 
 ## Still needs live validation
 
