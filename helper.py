@@ -13,7 +13,7 @@ def is_mob_close(mob, prange=.3):
     return are_points_within_range(mob.point, tupleToPoint(G.getlastScannedImage().ref_point), prange)
 
 
-# check if a given point is withn x% of the window height of the window center
+# check if a given point is within x% of the window height of the window center
 def are_points_within_range(given_point, center_point, prange):
     def distance_between_points(point1, point2):
         return math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)
@@ -66,8 +66,8 @@ def tupleToPoint(_tuple):
     return OID.Point(_tuple[0], _tuple[1])
 
 
-def activity(scanned_image=0):
-    if scanned_image == 0:
+def activity(scanned_image=None):
+    if scanned_image is None:
         scanned_image = G.getlastScannedImage()
 
     if len(scanned_image.reds) > 0:
@@ -100,11 +100,10 @@ def clickOn(x, y):
 END_PROGRAM = False
 def pause():
     global END_PROGRAM
-    G.GENERAL_SCAN_PROCESSES.switch()
-    G.MULTIUSE_SCAN_PROCESSES.switch()
+    G.pause_scanners()
 
     print("pausing program")
-    print("type 'stop' or 'end' to end excution")
+    print("type 'stop' or 'end' to end execution")
     print('>',end='')
     userinput = input()
 
@@ -112,8 +111,7 @@ def pause():
         print("ending program...")
         END_PROGRAM = True
     else:
-        G.GENERAL_SCAN_PROCESSES.switch()
-        G.MULTIUSE_SCAN_PROCESSES.switch()
+        G.resume_scanners()
         print("starting program in...")
         for i in range(1, 5):
             print(5 - i)

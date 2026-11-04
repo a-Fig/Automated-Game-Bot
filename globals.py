@@ -1,11 +1,13 @@
 import multiprocessing_class as MPC
 import objectFinder as OF
 import threading as th
+from collections import deque
 import manual_data_collection as MDC
 
-GENERAL_IMAGESTACK = list()
+# bounded, so old scans drop off on their own instead of being reset by hand
+GENERAL_IMAGESTACK = deque(maxlen=50)
 STACK_LOCK = th.Lock()
-SPELL_IMAGESTACK = list()
+SPELL_IMAGESTACK = deque(maxlen=50)
 SPELL_LOCK = th.Lock()
 LOW_HEALTH = [False]
 
@@ -24,9 +26,16 @@ MULTIUSE_SCAN_PROCESSES = MPC.RepeaterThread(
 MANUAL_DATA = MPC.ThreadHandler("manual_data", 1, MDC.listen, (), False)
 
 
-def pause_switch():
-    GENERAL_SCAN_PROCESSES.switch()
-    MULTIUSE_SCAN_PROCESSES.switch()
+# explicit pause and resume, not a toggle, so the scanners can never end up
+# in the opposite state from the one the main loop thinks they are in
+def pause_scanners():
+    GENERAL_SCAN_PROCESSES.pause()
+    MULTIUSE_SCAN_PROCESSES.pause()
+
+
+def resume_scanners():
+    GENERAL_SCAN_PROCESSES.unpause()
+    MULTIUSE_SCAN_PROCESSES.unpause()
 
 
 def getlastScannedImage():

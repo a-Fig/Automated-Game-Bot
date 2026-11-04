@@ -38,8 +38,8 @@ if __name__ == '__main__':
             if helper.pre_pause_check():
                 run = helper.pause()
         if (not skip) and len(G.getlastScannedImage().reds) > 0:
-            print("sheild()")
-            skip = ACT.sheild()
+            print("shield()")
+            skip = ACT.shield()
             print("success" if skip else "fail")
             bored_counter = 0 if skip else bored_counter
         if (not skip) and G.LOW_HEALTH[0]:
@@ -47,7 +47,10 @@ if __name__ == '__main__':
             skip = ACT.leash_and_heal()
             print("success" if skip else "fail")
             bored_counter = 0 if skip else bored_counter
-        if (not skip) and len(G.getlastScannedImage().mobs) > 0 and helper.is_mob_close(G.getlastScannedImage().mobs[0]):
+        # read the mob list once: two separate reads can return two different scans,
+        # and if the newer one has no mobs, mobs[0] raises IndexError
+        mobs = G.getlastScannedImage().mobs
+        if (not skip) and len(mobs) > 0 and helper.is_mob_close(mobs[0]):
             print("attackMob() CLOSE")
             skip = ACT.attackMob()
             print("success" if skip else "fail")
@@ -77,24 +80,11 @@ if __name__ == '__main__':
             bored_counter += 1
             helper.attemptScreenShot(20, image_name="bored")
             if bored_counter > 10:
-                print("wonder()")
-                ACT.wonder()
+                print("wander()")
+                ACT.wander()
             time.sleep(.15)
 
         helper.rate_stats()
-
-        if iterations % 300 == 200:
-            print("resetting stacks")
-            temp = G.getlastScannedImage()
-            with G.STACK_LOCK:
-                del G.GENERAL_IMAGESTACK[:]
-                G.GENERAL_IMAGESTACK.append(temp)
-
-            temp = G.getlastSpellImage()
-            with G.SPELL_LOCK:
-                del G.SPELL_IMAGESTACK[:]
-                G.SPELL_IMAGESTACK.append(temp)
-            print("stacks reset")
 
         iterations += 1
 

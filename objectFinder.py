@@ -1,18 +1,16 @@
+import os
 import inference
 import pyautogui
-from collections import deque
 import math
-import threading
 import time
-from PIL import Image
-import io
 import obstacle_instance_detection as OID
-import helper
 import window_info
 import onnxruntime as ort
+from spell_slots import SpellSlotMapper
 
-ROBOFLOW_KEY1 = "xxxxxxxxxxxxx"
-ROBOFLOW_KEY2 = "xxxxxxxxxxxxx"
+# set these as environment variables so the keys stay out of the source
+ROBOFLOW_KEY1 = os.environ.get("ROBOFLOW_KEY1", "xxxxxxxxxxxxx")
+ROBOFLOW_KEY2 = os.environ.get("ROBOFLOW_KEY2", "xxxxxxxxxxxxx")
 
 GENERAL_ALBION_MODEL = inference.get_model("albion_detector-l4o1a/5", ROBOFLOW_KEY2)
 ALBION_SPELL_MODEL = inference.get_model("spell_detector/4", ROBOFLOW_KEY1)
@@ -30,19 +28,6 @@ def getModel():
     return GENERAL_ALBION_MODEL
 
 
-def filter_sort_by_xy(objects):
-
-    def distance(object):
-        return object.x
-
-    result = sorted(objects, key=distance)
-
-    #print("ALBION_SPELL_MODEL",end='')
-    #printObjects(result)
-
-    return result
-
-
 def mainPlayerLocation(objects_con):
     for ob in objects_con:
         if ob.class_name == "player":
@@ -54,16 +39,10 @@ def mainPlayerLocation(objects_con):
 
 
 def sort_by_distance(points, rx, ry):
-    # Calculate distance using Euclidean distance formula
     def distance(point):
         return math.sqrt((point.x - rx) ** 2 + (point.y - ry) ** 2)
 
-    result = sorted(points, key=distance)
-
-    #print("GENERAL_ALBION_MODEL",end='')
-    #printObjects(result)
-    # Sort the points based on the calculated distance
-    return result
+    return sorted(points, key=distance)
 
 
 class DetectedObject:
@@ -112,72 +91,15 @@ class AutoParsedScannedImage:
         self.elapsed_time = time.time() - self.timestamp
 
 
-class parsedScannedImage:
-    def __init__(self):
-        self.timestamp = time.time()
-        self.image = 0
-        self.detectedObjects = scanImage(window_info.albion_screenshot())
-        self.players = list()
-        self.mobs = list()
-        self.reds = list()
-        self.farmables = list()
-        self.peaceItems = list()
-        for ob in self.detectedObjects:
-            if(ob.confidence > .65):
-                if(ob.class_name == "player"):
-                    self.players.append(ob)
-                elif(ob.class_name == "mob"):
-                    self.mobs.append(ob)
-                elif (ob.class_name == "red"):
-                    self.reds.append(ob)
-                elif ob.class_name == "hide" or ob.class_name == "fiber":
-                    self.farmables.append(ob)
-                elif(ob.class_name == "silver" or ob.class_name == "cup of piss" or ob.class_name == "wisp caged"):
-                    self.peaceItems.append(ob)
-        self.elapsed_time = time.time() - self.timestamp
-
-
-class ScannedImage:
-    def __init__(self, timestamp, image, detectedObjects):
-        self.timestamp = timestamp
-        self.image = image
-        self.detectedObjects = detectedObjects
-        self.player = False
-        self.mob = False
-        self.red = False
-        self.farmable = False
-        self.silver = False
-        self.piss = False
-        self.wisp = False
-
-
-def farmableOb(object):
-    if object.confidence > 55 and (object.class_name == "fiber" or object.class_name == "hide"):
-        return True
-    return False
-
-
-#deprecated
-def constantUpgradedGeneralScanning(imageStack, stack_lock, pause, end):
-    while not end[0]:
-        if pause[0]:
-            print("thread paused")
-            while pause[0]:
-                time.sleep(1)
-            print("thread unpaused")
-
-        general_scanner(imageStack, stack_lock)
-
-#USING
-#USING
-#USING
 def general_scanner(image_stack, stack_lock):
     new_scanned_image = AutoParsedScannedImage()
     with stack_lock:
-        image_stack.append(new_scanned_image)
+        # two scanner threads run at once, so a slow scan can finish after a newer one.
+        # only append if it is newer, so image_stack[-1] is always the newest screenshot
+        if len(image_stack) == 0 or new_scanned_image.timestamp >= image_stack[-1].timestamp:
+            image_stack.append(new_scanned_image)
 
 
-#USING
 def multiuse_scanner(image_stack, stack_lock, low_health):
     # spell stuff
     new_spell_image = SpellImage()
@@ -198,26 +120,6 @@ def multiuse_scanner(image_stack, stack_lock, low_health):
     time.sleep(.6)
 
 
-#deprecated
-def multiuse_scanning(imageStack, stack_lock, low_health, pause, end):
-    while not end[0]:
-        if pause[0]:
-            print("thread paused")
-            while pause[0]:
-                time.sleep(1)
-            print("thread unpaused")
-
-        #spell stuff
-        new_spell_image = SpellImage()
-        with stack_lock:
-            imageStack.append(new_spell_image)
-
-        time.sleep(.2)
-
-        #health stuff
-        low_health[0] = ALBION_HEALTH_MODEL.infer(window_info.albion_screenshot())[0].predictions[0].class_name == "low"
-
-
 class SpellImage:
     def __init__(self):
         self.timestamp = time.time()
@@ -225,23 +127,15 @@ class SpellImage:
         self.spells = create_spell_image(window_info.albion_screenshot())
         self.elapsed_time = time.time() - self.timestamp
 
-class FakeObject:
-    def __init__(self, class_name):
-        # Initialize the class_name attribute
-        self.class_name = class_name
-
-
 def spellScan():
     return create_spell_image(window_info.albion_screenshot())
 
 
+SPELL_SLOTS = SpellSlotMapper()
+
+
 def create_spell_image(image):
-    result = filter_sort_by_xy(ALBION_SPELL_MODEL.infer(image)[0].predictions)
-
-    while len(result) < 6:
-        result.append(FakeObject("cooldown"))
-
-    return result
+    return SPELL_SLOTS.map(ALBION_SPELL_MODEL.infer(image)[0].predictions)
 
 
 def loading_bar_detected():

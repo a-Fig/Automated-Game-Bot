@@ -12,7 +12,7 @@ import weapon_spell_casting as cast
 import obstacle_instance_detection as OID
 
 
-def sheild():
+def shield():
     if G.getlastSpellImage().spells[4].class_name == "up":
         kb.press_and_release('d')
         time.sleep(2.5)
@@ -78,10 +78,17 @@ def farm():
                 print("done")
 
             print("farming", end='')
+            # cap the wait, so a loading bar the model keeps seeing by mistake
+            # can't hold the bot here forever
+            give_up_at = time.time() + 30
             while OF.loading_bar_detected():
                 print(".", end='')
                 if danger():
                    return False
+                if time.time() > give_up_at:
+                    print("loading bar never cleared, moving on")
+                    break
+                time.sleep(0.05)
             print("done")
             helper.await_new_image()
             return True
@@ -131,8 +138,8 @@ def danger():
     return False
 
 
-def wonder():
-    print("wondering")
+def wander():
+    print("wandering")
     xmove = window_info.windowDimensions()[0] * 0.25
     ymove = window_info.windowDimensions()[1] * 0.25
 
@@ -147,12 +154,24 @@ def wonder():
         windowDimensions = window_info.windowDimensions()
         return OID.Point((mainplayer[0] + rand_x) % (windowDimensions[0] + windowLocation[0]), (mainplayer[1] + rand_y) % (windowDimensions[1] + windowLocation[1]))
 
-    random_point = pickRandomPoint(xmove, ymove)
-    while not helper.isObjectReachable(random_point) and not helper.are_points_within_range(random_point, helper.tupleToPoint(G.getlastScannedImage().ref_point), .15):
-        print(f"{random_point.x},{random_point.y} is not reachable")
-        random_point = pickRandomPoint(xmove, ymove)
+    def is_bad_point(point):
+        # reject a point if it is blocked OR too close to bother walking to.
+        # this used to be "blocked AND far", which accepted blocked points nearby
+        # and clear points right on top of the player
+        too_close = helper.are_points_within_range(point, helper.tupleToPoint(G.getlastScannedImage().ref_point), .15)
+        return too_close or not helper.isObjectReachable(point)
 
-    print("wonder point chosen")
+    # cap the attempts, so a screen boxed in by obstacles can't spin here forever
+    random_point = pickRandomPoint(xmove, ymove)
+    attempts = 1
+    while is_bad_point(random_point):
+        if attempts >= 50:
+            print("no reachable wander point found")
+            return
+        random_point = pickRandomPoint(xmove, ymove)
+        attempts += 1
+
+    print("wander point chosen")
     gui.moveTo(random_point.x, random_point.y, duration=0.2)
     for i in range(0, 4):
         gui.rightClick()

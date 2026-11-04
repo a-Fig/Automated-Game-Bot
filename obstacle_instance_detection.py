@@ -1,5 +1,4 @@
 import objectFinder as ob
-import time
 import window_info
 def detectObstacles(image):
     result = (ob.ALBION_OBSTACLE_MODEL.infer(image)[0].predictions)
@@ -63,14 +62,16 @@ class Obstacle:
 
             return False  # Segments do not intersect
 
-        # Loop through each consecutive pair of points in the obstacle's boundary
-        for i in range(len(self.points) - 1):
-            # Check if the line segment between `line.pointA` and `line.pointB`
-            # intersects with the segment between `self.points[i]` and `self.points[i + 1]`
-            if segments_intersect(line.pointA, line.pointB, self.points[i], self.points[i + 1]):
-                return True  # An intersection is found
+        # check every edge of the outline, including the closing edge from the
+        # last point back to the first. without it each obstacle has an open side
+        n = len(self.points)
+        if n < 2:
+            return False
+        for i in range(n):
+            if segments_intersect(line.pointA, line.pointB, self.points[i], self.points[(i + 1) % n]):
+                return True
 
-        return False  # No intersection found across any segments
+        return False
 
 class ManualObstacleImage():
     def __init__(self, image, timestamp):
@@ -85,23 +86,3 @@ class ManualObstacleImage():
             if obstacle.does_intersect(line):
                 return True
         return False
-class AutoObstacleImage():
-    def __init__(self,):
-        self.obstacleList = list()
-        self.timestamp = time.time()
-        for detected in detectObstacles(ob.screenshot()):
-            if detected.confidence > .5:
-                self.obstacleList.append(Obstacle(detected.confidence, detected.points))
-
-    def does_intersect(self,line):
-        for obstacle in self.obstacleList:
-            if obstacle.does_intersect(line):
-                return True
-        return False
-
-def constantObstacleScanning(imageStack, stack_lock, keep_scanning):
-    while keep_scanning[0]:
-        new_obstacle_image = AutoObstacleImage()
-        with stack_lock:
-            imageStack.append(new_obstacle_image)
-

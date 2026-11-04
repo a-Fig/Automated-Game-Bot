@@ -1,6 +1,4 @@
 import keyboard
-import datetime
-import uuid
 import time
 import helper
 
@@ -19,7 +17,6 @@ def listen(name, pause, end, silent, args):
 
     while not end[0]:
         time.sleep(0.02)
-        pass
 
     keyboard.remove_hotkey('right shift')
     if not silent: print(f"{name} ended")
