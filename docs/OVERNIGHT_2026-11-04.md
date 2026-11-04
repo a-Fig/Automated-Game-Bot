@@ -41,6 +41,8 @@ calibration (`calibrated = true`, `minimap_to_screen = [[373.34, 274.96], [-59.9
 | 02:01 | Daily server maintenance (10:00 UTC), client at login screen | Bot suspended itself; logged back in at 02:26. |
 | 03:31 | Bot pressed Esc (player hidden behind a palm) and opened the game menu (Logout/Close) | Closed it. With the HUD readable the bot now steps out of cover instead (ce12f65). |
 | 04:14 | Travel left-clicked a rock and gathered "Rough Stone" | Travel walks with right-click now (eacb3e3). |
+| 05:44 | Farming bot wandered through Fractured Ground's NW exit into Vixen Tor (tier IV) and farmed there ~6 min; travel run 10 (05:50) then planned on the wrong zone's map | Stopped at 05:54, walked back by hand (ford, road, gate) and re-entered Fractured Ground at 07:02, HP full. Zone guard (label-change safety stop + exit no-go discs) requested from sol. |
+| 05:4x | New model called meadow lavender/wildflowers "fiber", so farming in Vixen Tor kept failing with "no gathering bar" | Labelling prompt fixed and meadow look-alikes added to the reference sheet (b193ded); dataset v2 relabelled. |
 
 ## The image model
 
@@ -66,6 +68,7 @@ calibration (`calibrated = true`, `minimap_to_screen = [[373.34, 274.96], [-59.9
   8 s retreat, gives up after 30 s without a move and goes back to farming.
 - Learning: walked positions and stall edges persist in `assets/zones/fractured_ground/learned.json`
   (gitignored). Road crossings need two stalls before they become an edge.
+- Sol's backtracking (b7a0eee) is merged: zero-movement detection, cliff "fans", and up to two walks back along the trail per stuck spot. It worked once live in run 10, but that run was in the wrong zone (see Incidents).
 - Best run (run 7): oasis to (238.6, 143.1) on the road below the ramp. Run 9 climbed onto a rock
   plateau at (239.4, 122.0) and could not get down; sol is adding zero-movement detection and
   backtracking along the trail for that case.
