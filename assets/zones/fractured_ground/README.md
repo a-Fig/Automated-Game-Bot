@@ -6,6 +6,14 @@ high in Y. This revision registers Tab terrain to the minimap visible in the sam
 captures and independently checks the Tab-closed player fixes. Navigation
 calibration, visited.json and runtime arrow fixes remain unchanged.
 
+`zone.json` optionally lists harvestable detector classes in `resources`.
+Fractured Ground has hide, fiber and ore (tiers II–III in the fg_04 Tab header),
+so wood/stone detections cannot become farm targets. This filters the configured
+`detection.farm_classes`; it does not enable additional classes or infer tiers.
+Omitting the list leaves farming unchanged; an empty list disables farm targets.
+Metadata is cached for the run, so restart after editing it. The configured zone
+is trusted; this does not identify a different zone or replace the zone guard.
+
 - `map.png`: re-registered Tab image. Moving player icons are removed before
   combining captures; terrain behind them is inpainted, not known.
 - `mask.png`: binary 400x360 walkability. Both flat ground levels and neutral/warm

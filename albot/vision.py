@@ -14,6 +14,7 @@ from .state import Detection, Scene, Status
 from .safety import ZoneGuard
 from .window import Rect
 from .hud import hud_reason
+from .resources import zone_resources
 
 log = logging.getLogger(__name__)
 
@@ -173,8 +174,10 @@ def build_scene(timestamp: float, size: tuple[int, int], predictions: Sequence,
         by_class[name] = "mob"
     for name in d.threat_classes:
         by_class[name] = "threat"
+    resources = zone_resources(config.navigation)
     for name in d.farm_classes:
-        by_class[name] = "farm"
+        if resources is None or name in resources:
+            by_class[name] = "farm"
     for name in d.pickup_classes:
         by_class[name] = "pickup"
     for name in d.wisp_classes:

@@ -1,12 +1,38 @@
 """Resource failure history in an approximate, camera-independent pixel space."""
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 
 from .geometry import Point
 
 log = logging.getLogger(__name__)
+
+
+def zone_resources(navigation):
+    """Optional detector class allowlist; no map masks or runtime learning needed."""
+    from .navigation import Zone
+
+    return _zone_resources((Zone.asset_folder(navigation.zone, navigation) / "zone.json").resolve())
+
+
+@lru_cache(maxsize=16)
+def _zone_resources(path):
+    # Zone metadata is fixed for a run. Cache it across scene worker threads and
+    # target picks; restart after editing resources, as with other zone assets.
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    if "resources" not in data:
+        return None
+    resources = data["resources"]
+    if not isinstance(resources, list) or any(not isinstance(name, str) or not name for name in resources):
+        raise ValueError("zone resources must be a list of nonempty detector class names")
+    return frozenset(resources)
 
 
 @dataclass

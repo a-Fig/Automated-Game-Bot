@@ -23,6 +23,7 @@ from typing import Optional, Sequence
 from .geometry import Point, find_detour
 from .state import Detection, Scene, Status
 from .hud import hud_reason
+from .resources import zone_resources
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +65,9 @@ def pick_target(ctx, scene: Scene, items: Sequence[Detection], behavior: str, ve
     that a single detour waypoint can reach. Spots the bot keeps failing at are
     skipped for a while (see Blacklist).
     """
-    candidates = [d for d in items if not ctx.blacklist.blocked(d.center)
+    resources = zone_resources(ctx.config.navigation) if behavior == "farm" else None
+    candidates = [d for d in items if (resources is None or d.class_name in resources)
+                  and not ctx.blacklist.blocked(d.center)
                   and (behavior != "farm" or not ctx.resources.blocked(scene, d))
                   and ctx.movement_allowed(d.center)]
     for d in candidates:

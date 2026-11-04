@@ -26,6 +26,7 @@ class_confidence = {}      # per-class overrides, e.g. { silver = 0.55 }
 mob_classes = ["mob"]
 threat_classes = ["red"]
 farm_classes = ["hide", "fiber"]
+# Optional zone.json resources filters this list; it does not enable new classes.
 pickup_classes = ["silver", "cup of piss"]
 wisp_classes = ["wisp caged"]
 player_class = "player"

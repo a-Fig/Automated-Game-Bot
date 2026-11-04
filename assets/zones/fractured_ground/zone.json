@@ -1,5 +1,6 @@
 {
   "name": "Fractured Ground",
+  "resources": ["hide", "fiber", "ore"],
   "size": [
     400,
     360
