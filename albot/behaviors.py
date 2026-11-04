@@ -209,6 +209,14 @@ class Travel(Behavior):
         self.last_dash_at = -math.inf
         self.moved_at = None
         self.clicked_at = -math.inf
+        self.backtrack_spot = None
+        self.backtrack_index = -1
+        self.backtrack_started = None
+        self.backtrack_tick = None
+        self.backtrack_tries = []
+        self.journey_start, self.best_point = None, None
+        self.start_distance, self.best_remaining = math.inf, math.inf
+        self.edges_at_start = 0
 
     def plan(self, ctx, scene, status):
         goal = ctx.config.behavior.travel_goal
@@ -220,6 +228,7 @@ class Travel(Behavior):
         ctx.check_safety()
         goal = ctx.config.behavior.travel_goal
         if ctx.retreat_required():
+            self.backtrack_spot = None  # health retreat takes over the same recorded trail
             if goal != self.goal:
                 self._start_task(ctx, goal)
             return self._retreat(ctx)
@@ -241,12 +250,15 @@ class Travel(Behavior):
                 ctx.stop_travel()
             self._wait(ctx)
             return True
+        if self.backtrack_spot is not None:
+            return self._backtrack(ctx, frame, status)
         self.timestamp = status.timestamp
         step = self.task.tick(frame, ctx.now(), moving=ctx.travel_moving)
         # Models/health can publish while path planning runs. Never dispatch a
         # proposal without rechecking both safety and the higher-priority plans.
         ctx.check_safety()
         if ctx.retreat_required():
+            self.backtrack_spot = None
             return self._retreat(ctx)
         if ctx.higher_priority_applies(self.name):
             ctx.stop_travel()
@@ -260,6 +272,7 @@ class Travel(Behavior):
             self.last_state = step.status
         if step.location is not None:
             point = step.location.point
+            self._track(point)
             if not self.trail or point.dist(self.trail[-1]) >= ctx.config.navigation.trail_spacing:
                 self.trail.append(point)
                 self.trail = self.trail[-ctx.config.navigation.trail_limit:]
@@ -267,8 +280,14 @@ class Travel(Behavior):
             log.info("travel arrived at %s; clearing goal", goal)
             ctx.config.behavior.travel_goal = ""
             ctx.travel_moving = False
-            self.task, self.goal = None, ""
+            self.finish(ctx, "arrived")
             return True  # arrival sends no input and does not fall through to farming
+        if (step.location is not None and (step.status == "stalled"
+                or (step.status == "no_route" and "learned edge" in step.message))):
+            if self._begin_backtrack(ctx, step.location.point):
+                self._wait(ctx)
+                return True
+            return self._give_up(ctx, "backtrack exhausted or no recorded escape")
         give_up = ctx.config.behavior.travel_give_up_seconds
         if step.click is not None and step.status in ("move", "sidestep"):
             self.moved_at = ctx.now()
@@ -281,7 +300,7 @@ class Travel(Behavior):
                       goal, give_up, step.status, step.message)
             ctx.config.behavior.travel_goal = ""
             ctx.stop_travel()
-            self.task, self.goal, self.moved_at = None, "", None
+            self.finish(ctx, f"gave_up:{step.status}")
             return True
         if step.click is not None and step.status in ("move", "sidestep"):
             # Live 2026-11-04: a stop-key + click on every fresh frame (~5/s)
@@ -292,6 +311,7 @@ class Travel(Behavior):
                 # Right-click walk: a left click on a rock or plant starts
                 # gathering it (seen live 2026-11-04: "+2 Rough Stone" mid-route).
                 ctx.walk_to(step.click)
+                self.task.note_walk(ctx.now())
                 self.clicked_at = ctx.now()
             ctx.travel_moving = True
             ctx.travel_retreating = False
@@ -305,14 +325,114 @@ class Travel(Behavior):
         from .actuator import DryRunInput
         n = ctx.config.navigation
         if (n.trail_spacing <= 0 or n.trail_limit < 2 or n.retreat_tolerance <= 0
-                or n.attack_repeat_radius <= 0 or n.attack_block_radius < 1):
+                or n.attack_repeat_radius <= 0 or n.attack_block_radius < 1
+                or n.backtrack_distance < 3 or not 0 <= n.backtrack_attempts <= 2
+                or n.backtrack_seconds <= 0):
             raise ValueError("invalid travel retreat trail settings")
         ctx.stop_travel()
+        self.finish(ctx, "goal_changed")
         self.task = NavigateTo(goal, config=n, learn=not isinstance(ctx.input, DryRunInput))
         self.goal, self.timestamp = goal, None
         self.trail, self.attack_spots, self.blocked_spots = [], [], []
         self.retreat_episode = None
         self.moved_at = None
+        self.backtrack_spot, self.backtrack_tries = None, []
+        self.journey_start, self.best_point = None, None
+        self.start_distance, self.best_remaining = math.inf, math.inf
+        self.edges_at_start = len(self.task.evidence.edges)
+
+    def _track(self, point):
+        remaining = point.dist(self.task.goal)
+        if self.journey_start is None:
+            self.journey_start, self.start_distance = point, remaining
+        if remaining < self.best_remaining:
+            self.best_point, self.best_remaining = point, remaining
+
+    def finish(self, ctx, outcome):
+        """One summary per completed/cancelled/stopped journey; no input here."""
+        if self.task is None:
+            return
+        def coordinate(point):
+            return f"({point.x:.2f},{point.y:.2f})" if point is not None else "unknown"
+        progress = max(0.0, self.start_distance-self.best_remaining) if self.best_point is not None else 0.0
+        log.info("travel summary goal=%s start=%s best=%s progress=%.2f remaining=%.2f edges=%d outcome=%s",
+                 self.goal, coordinate(self.journey_start), coordinate(self.best_point), progress,
+                 self.best_remaining, max(0, len(self.task.evidence.edges)-self.edges_at_start), outcome)
+        self.task, self.goal, self.moved_at, self.backtrack_spot = None, "", None, None
+
+    def _give_up(self, ctx, reason):
+        ctx.check_safety()
+        if ctx.retreat_required():
+            self.backtrack_spot = None
+            return self._retreat(ctx)
+        if ctx.higher_priority_applies(self.name):
+            ctx.stop_travel()
+            return False
+        log.error("travel gave up on %s: %s", self.goal, reason)
+        ctx.config.behavior.travel_goal = ""
+        ctx.stop_travel()
+        self.finish(ctx, "gave_up:"+reason)
+        return True
+
+    def _begin_backtrack(self, ctx, point):
+        n = ctx.config.navigation
+        attempts = sum(point.dist(old) <= n.stuck_block_radius for old in self.backtrack_tries)
+        if (not n.calibrated or attempts >= n.backtrack_attempts
+                or not any(point.dist(old) >= n.backtrack_distance for old in self.trail)):
+            return False
+        ctx.stop_travel()
+        self.backtrack_tries.append(point)
+        self.backtrack_spot, self.backtrack_index = point, len(self.trail)-1
+        self.backtrack_started = self.backtrack_tick = ctx.now()
+        log.warning("travel backtrack %d/%d near %.2f,%.2f: following recorded trail",
+                    attempts+1, n.backtrack_attempts, point.x, point.y)
+        return True
+
+    def _backtrack(self, ctx, frame, status):
+        from .navigation import screen_click
+        n, now = ctx.config.navigation, ctx.now()
+        self.timestamp = status.timestamp
+        if now-self.backtrack_tick > 2:
+            self.backtrack_started += now-self.backtrack_tick  # combat/focus pause is not walking time
+        self.backtrack_tick = now
+        if now-self.backtrack_started >= n.backtrack_seconds:
+            return self._give_up(ctx, "backtrack timeout")
+        location = self.task.locator.locate(frame, now)
+        if location is None or not n.calibrated:
+            ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        point = location.point
+        self._track(point)
+        if ctx.travel_moving:
+            self.task.record_position(location)
+        reached = [i for i in range(self.backtrack_index+1) if point.dist(self.trail[i]) <= n.retreat_tolerance]
+        if reached:
+            self.backtrack_index = min(reached)-1
+        if point.dist(self.backtrack_spot) >= n.backtrack_distance:
+            ctx.stop_travel()
+            self.task.resume_after_backtrack(point, now, self.backtrack_spot)
+            self.trail = self.trail[:max(0, self.backtrack_index+1)]+[point]
+            self.backtrack_spot, self.timestamp, self.moved_at = None, None, now
+            log.info("travel backtrack: moved %.1fpx; replanning with learned edges retained", n.backtrack_distance)
+            return True
+        if self.backtrack_index < 0:
+            return self._give_up(ctx, "recorded trail ended before escaping stall spot")
+        target = self.trail[self.backtrack_index]
+        click = screen_click(Point(target.x-point.x, target.y-point.y), n)
+        ctx.check_safety()
+        if ctx.retreat_required():
+            self.backtrack_spot = None
+            return self._retreat(ctx)
+        if ctx.higher_priority_applies(self.name):
+            ctx.stop_travel()
+            return False
+        if click is not None and now-self.clicked_at >= ctx.config.behavior.travel_click_interval:
+            ctx.walk_to(click)
+            self.clicked_at = now
+            ctx.travel_moving = True
+        self._wait(ctx)
+        return True
 
     def _retreat(self, ctx):
         from .navigation import screen_click
@@ -331,6 +451,7 @@ class Travel(Behavior):
             self._wait(ctx)
             return True
         point = location.point
+        self._track(point)
         if ctx.travel_moving:
             self.task.record_position(location)
         if self.retreat_episode != guard.retreat_started:

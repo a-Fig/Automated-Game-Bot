@@ -148,6 +148,33 @@ even without edges, it reports the normal mask failure instead. The existing tra
 give-up timer then clears the goal safely. A real cliff outranks a guessed road.
 Arrival means near the portal's **approach point**, not a completed zone transfer.
 
+After an actual dispatched walk, `zero_motion_pixels = 0.3` held for
+`zero_motion_seconds = 3.0` triggers unreachable-target learning before the normal
+stuck timer. Proposals and throttled re-clicks do not start/reset this clock;
+movement in any direction, missing fixes, stopped travel and pauses reset it.
+The failed direction receives a transverse edge with short wings at +/-45 degrees
+(one logical fan record with three segments). Short wings avoid blocking behind
+the player; standing-position clearance protection still applies. Targets too close
+to place a safe barrier are recorded without blocking the player's own cell.
+The two-stall confirmation rule still applies if any part of a fan crosses a road.
+
+At the per-spot retry limit, or when learned cliffs leave no route, travel attempts
+to backtrack along its actual journey breadcrumbs. It sends guarded right-click
+walks, without boots, and yields to combat/health retreat. On reaching at least
+`backtrack_distance = 3.0` map pixels from the stalled spot it trims the abandoned
+trail portion, clears that spot's retry counter, and replans with all learned edges
+retained. At most `backtrack_attempts = 2` escapes are allowed per spot per journey.
+No recorded point at least 3px away means no invented escape; the journey gives up.
+An escape also stops after `backtrack_seconds = 20.0` of active walking time. Combat
+or focus interruptions do not consume that timeout. This assumes that the walked
+approach is reversible; live validation is still needed on plateau entrances.
+
+Each journey emits one `travel summary` line on arrival, cancellation, goal change,
+give-up or run/safety stop: goal, start, best observed position, progress, remaining
+distance, new active edge count and outcome. Progress is the reduction in straight
+map distance to the goal, not total path length. Pending road stalls are not counted
+as active edges; a three-segment fan counts as one learned record.
+
 ## Learned travel evidence
 
 Real travel saves `assets/zones/<zone>/learned.json` next to its zone assets (or in
@@ -189,6 +216,8 @@ are kept even when they disconnect a route: the road mask may be wrong.
 Normal `nav --dry-run`, dry-run bot input and replay never write learned evidence.
 Standalone guarded dispatchers can opt into `NavigateTo(..., learn=True)` and call
 `tick(frame, now, moving=True)` only while previously dispatched movement is active.
+Call `note_walk(now)` after each actual forward walk dispatch to arm fast zero-motion
+detection; do not call it for a proposal that was skipped or failed to dispatch.
 `record_position(location)` is available for their retreat path. Merely proposing
 a click is not evidence that movement occurred. The integrated travel behavior
 sets these flags through its existing input/safety path.

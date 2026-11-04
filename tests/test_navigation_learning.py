@@ -286,3 +286,66 @@ def test_edge_cli_lists_and_retracts_by_index_or_near_without_input(tmp_path, mo
     before = path.read_bytes()
     assert app.main(["nav-edges", "retract", "--file", str(path), "--index", "99"]) == 1
     assert path.read_bytes() == before
+
+
+def test_run9_zero_displacement_learns_fan_after_dispatched_walk_not_proposals():
+    cfg = NavigationConfig(calibrated=True, stuck_seconds=30)
+    zone = Zone("plateau", Path("."), {"terrain_polygon": [[0, 0], [399, 0], [399, 359], [0, 359]]},
+                ScaledWalkGrid(np.ones((1440, 1600), bool), 4, clearance=1))
+    point, target = Point(239.35, 121.95), Point(238.0, 124.25)
+    nav = NavigateTo((290, 145), zone, cfg)
+    nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*point, None, 0.95))
+    nav.route = [point, target, nav.goal]
+    for now in range(5):
+        assert nav.tick(None, now, moving=True).status == "move"
+    assert not nav.evidence.edges  # proposals did not dispatch a click
+    nav.note_walk(4)
+    assert nav.tick(None, 5, moving=True).status == "move"
+    assert nav.tick(None, 6, moving=True).status == "move"
+    step = nav.tick(None, 7, moving=True)
+    assert step.status == "waiting" and nav.replans == 1
+    edge = nav.evidence.edges[-1]
+    assert edge["player"] == list(point) and edge["target"] == list(target)
+    assert edge["fan_degrees"] == 45 and len(edge["segments"]) == 3
+    assert nav.grid.is_safe(point)
+    nav.failed, nav.failed_point = True, point
+    before = list(nav.evidence.edges)
+    nav.resume_after_backtrack(Point(235, 121), 8, point)
+    assert not nav.failed and not nav.stalls and nav.evidence.edges == before
+
+
+def test_zero_motion_resets_on_movement_and_stopped_dispatch():
+    cfg = NavigationConfig(calibrated=True, stuck_seconds=30)
+    zone = Zone("test", Path("."), {"terrain_polygon": [[0, 0], [49, 0], [49, 39], [0, 39]]},
+                WalkGrid(np.ones((40, 50), bool), clearance=0))
+    nav = NavigateTo((40, 20), zone, cfg)
+    point = Point(10, 20)
+    nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*point, None, 0.95))
+    nav.tick(None, 0)
+    nav.note_walk(0)
+    for now in range(1, 6):
+        point = Point(10, 20+now*0.4)  # curved walk, away from the goal
+        assert nav.tick(None, now, moving=True).status == "move"
+    assert not nav.evidence.edges
+    nav.tick(None, 6, moving=False)
+    assert nav.zero_at is None
+    nav.note_walk(6)
+    nav.locator.locate = lambda frame, now: None
+    assert nav.tick(None, 7, moving=True).status == "lost" and nav.zero_at is None
+
+
+@pytest.mark.parametrize("scale", [1, 4])
+def test_fan_roundtrip_preserves_player_and_the_way_back(tmp_path, scale):
+    path = tmp_path / "learned.json"
+    evidence = LearnedEvidence(path, "test", (50, 40), scale)
+    evidence.observe((20, 20))
+    road = np.ones((40*scale, 50*scale), bool)
+    assert not evidence.stall((20, 20), (30, 20), 1, 6, 0, road=road, fan=True)
+    evidence = LearnedEvidence(path, "test", (50, 40), scale)
+    assert not evidence.edges and len(evidence.road_stalls) == 1
+    assert evidence.stall((20, 20), (30, 20), 1, 6, 3, road=road, fan=True)
+    loaded = LearnedEvidence(path, "test", (50, 40), scale)
+    grid = loaded.apply(ScaledWalkGrid(np.ones((40*scale, 50*scale), bool), scale, 1))
+    assert loaded.edges == evidence.edges and len(loaded.edges[0]["segments"]) == 3
+    assert grid.is_safe((20, 20)) and grid.line_clear((20, 20), (15, 20))
+    assert not grid.line_clear((20, 20), (30, 20))

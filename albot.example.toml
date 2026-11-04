@@ -165,6 +165,11 @@ side_step_seconds = 1.0        # legacy setting; travel now replans without a sh
 stuck_block_radius = 3         # radius for grouping repeated stalls at the same spot
 max_replans = 8                # per spot; failures elsewhere don't exhaust the journey
 learned_edge_length = 6.0      # short transverse wall segment ahead of a stall, in map pixels
+zero_motion_seconds = 3.0      # after an actual walk click, don't wait for stuck_seconds...
+zero_motion_pixels = 0.3       # ...if the arrow stays within this radius; learn a +/-45 degree fan
+backtrack_distance = 3.0       # exit the stall area along actual journey breadcrumbs before replanning
+backtrack_attempts = 2         # at most two escapes per spot; 0 disables them
+backtrack_seconds = 20.0       # walking-time limit per escape; combat/focus pauses excluded
 # Real travel learns to assets/zones/<zone>/learned.json (gitignored, atomic writes).
 # Standing fixes open radius-1 discs; learned edges protect all observed player cells.
 trail_spacing = 0.5            # minimap pixels between observed journey breadcrumbs

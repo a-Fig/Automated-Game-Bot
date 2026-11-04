@@ -203,6 +203,11 @@ class NavigationConfig:
     stuck_block_radius: int = 3
     max_replans: int = 8  # per spot, not a budget shared by the whole journey
     learned_edge_length: float = 6.0
+    zero_motion_seconds: float = 3.0
+    zero_motion_pixels: float = 0.3
+    backtrack_distance: float = 3.0
+    backtrack_attempts: int = 2
+    backtrack_seconds: float = 20.0
     trail_spacing: float = 0.5
     trail_limit: int = 128
     retreat_tolerance: float = 0.35

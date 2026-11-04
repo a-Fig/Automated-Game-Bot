@@ -44,6 +44,9 @@ class LearnedEvidence:
             for edge in [*data["edges"], *data.get("road_stalls", [])]:
                 for key in ("player", "target", "a", "b"):
                     self._check(edge[key])
+                for a, b in self.segments(edge):
+                    self._check(a)
+                    self._check(b)
             self.edges = data["edges"]
             self.road_stalls = data.get("road_stalls", [])
 
@@ -80,7 +83,7 @@ class LearnedEvidence:
         self.save()
         return True
 
-    def stall(self, player, target, clearance, length, now, road=None):
+    def stall(self, player, target, clearance, length, now, road=None, fan=False):
         self._check(player)
         self._check(target)
         direction = np.asarray(target, float)-player
@@ -97,6 +100,18 @@ class LearnedEvidence:
         limit = np.asarray(self.size)-1/self.scale
         edge = {"player": list(player), "target": list(target), "at": now,
                 "a": np.clip(a, 0, limit).tolist(), "b": np.clip(b, 0, limit).tolist()}
+        if fan and distance > offset:
+            segments = [[edge["a"], edge["b"]]]
+            for angle in (-math.pi/4, math.pi/4):
+                c, s = math.cos(angle), math.sin(angle)
+                heading = np.array((c*direction[0]-s*direction[1], s*direction[0]+c*direction[1]))
+                center = np.asarray(player)+heading*min(distance, max(offset, min(3.0, distance/2)))
+                # Short wings widen the failed angular sector without wrapping
+                # a full-length tangent behind the player and blocking escape.
+                side = np.array((-heading[1], heading[0]))*min(length/6, offset/2)
+                segments.append([np.clip(center-side, 0, limit).tolist(),
+                                 np.clip(center+side, 0, limit).tolist()])
+            edge.update(fan_degrees=45, segments=segments)
         if road is not None and self.crosses_road(edge, road):
             repeats = sum(math.dist(player, old["player"]) <= 1.5 for old in [*self.edges, *self.road_stalls])
             if not repeats:
@@ -112,16 +127,24 @@ class LearnedEvidence:
 
     def crosses_road(self, edge, road):
         pixels = np.zeros(road.shape, np.uint8)
-        a, b = [tuple(np.rint(np.asarray(edge[k])*self.scale).astype(int)) for k in ("a", "b")]
-        cv2.line(pixels, a, b, 1, 1)
+        for segment in self.segments(edge):
+            a, b = [tuple(np.rint(np.asarray(p)*self.scale).astype(int)) for p in segment]
+            cv2.line(pixels, a, b, 1, 1)
         return bool(np.any((pixels != 0) & road))
 
     @staticmethod
+    def segments(edge):
+        return edge.get("segments", [[edge["a"], edge["b"]]])
+
+    @staticmethod
     def distance(edge, point):
-        a, b, point = np.asarray(edge["a"]), np.asarray(edge["b"]), np.asarray(point)
-        vector = b-a
-        t = np.clip(np.dot(point-a, vector)/max(float(np.dot(vector, vector)), 1e-9), 0, 1)
-        return min(math.dist(point, edge["player"]), float(np.linalg.norm(point-(a+t*vector))))
+        result = math.dist(point, edge["player"])
+        for segment in LearnedEvidence.segments(edge):
+            a, b = map(np.asarray, segment)
+            vector = b-a
+            t = np.clip(np.dot(np.asarray(point)-a, vector)/max(float(np.dot(vector, vector)), 1e-9), 0, 1)
+            result = min(result, float(np.linalg.norm(np.asarray(point)-(a+t*vector))))
+        return result
 
     def retract(self, indices=(), near=None, radius=1.5):
         chosen = set(indices)
@@ -146,8 +169,9 @@ class LearnedEvidence:
             open_observed_disc(grid.mask, point, grid.scale)
         blocked = np.zeros(grid.mask.shape, np.uint8)
         for edge in self.edges if edges is None else edges:
-            a, b = [tuple(np.rint(np.asarray(edge[k])*grid.scale).astype(int)) for k in ("a", "b")]
-            cv2.line(blocked, a, b, 1, 1)
+            for segment in self.segments(edge):
+                a, b = [tuple(np.rint(np.asarray(p)*grid.scale).astype(int)) for p in segment]
+                cv2.line(blocked, a, b, 1, 1)
         # Positive standing evidence wins over a guessed edge. Protect a full
         # clearance halo, including raster rounding, on every reload and replan.
         radius = math.ceil(grid.clearance*grid.scale)+1

@@ -391,8 +391,9 @@ def write_learned_check(output, image, layers, metadata, evidence_path, scale):
     overlay = image.copy()
     overlay[layers["road"]] = (overlay[layers["road"]]*0.4+np.array((40, 220, 40))*0.6).astype(np.uint8)
     for i, edge in enumerate(evidence.edges):
-        a, b = [tuple(np.rint(np.asarray(edge[k])*scale).astype(int)) for k in ("a", "b")]
-        cv2.line(overlay, a, b, (255, 0, 255), 1)
+        for segment in evidence.segments(edge):
+            a, b = [tuple(np.rint(np.asarray(p)*scale).astype(int)) for p in segment]
+            cv2.line(overlay, a, b, (255, 0, 255), 1)
         cv2.putText(overlay, str(i), a, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 255), 1)
     cv2.polylines(overlay, [np.rint(np.asarray(route)*scale).astype(int)], False, (255, 255, 255), 1)
     # The local ramp check's map coordinates; retain pixel axes for inspection.
