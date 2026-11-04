@@ -105,6 +105,12 @@ low_threshold = 0.4
 model_fallback = false     # use low_detector only when HUD unreadable; cannot detect death
 # Without fallback, missing/unreadable HUD health suspends all actions until readable.
 # If both bars are empty, health is unknown, not zero; respawn recognition is still needed.
+# Green gathering progress bar under the player (pixels, 2240x1400). Checked by colour:
+# on 194 live frames this matched all 14 real gathers, while the loading_bar model
+# also fired 6 times on the player's own health bar and the HUD.
+gather_bar = [1015, 1024, 1280, 1037]
+gather_bar_min_pixels = 30
+gather_bar_model = false
 
 [safety]
 death_limit = 2            # quit after this many distinct deaths in the rolling window

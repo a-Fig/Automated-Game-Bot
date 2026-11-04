@@ -110,6 +110,22 @@ def read_health(frame: Any, config: Config) -> float | None:
     return float(reach / red.shape[1])
 
 
+def read_gather_bar(frame: Any, config: Config) -> bool | None:
+    """True while the green gathering progress bar is on screen; None if unreadable."""
+    import numpy as np
+
+    rgb = hasattr(frame, "convert")
+    pixels = np.asarray(frame.convert("RGB") if rgb else frame)
+    h = config.health
+    if pixels.ndim != 3 or pixels.shape[2] < 3 or pixels.shape[1::-1] != h.window_size:
+        return None
+    x0, y0, x1, y1 = h.gather_bar
+    seg = pixels[y0:y1, x0:x1, :3].astype(int)
+    r, g, b = (seg[..., 0], seg[..., 1], seg[..., 2]) if rgb else (seg[..., 2], seg[..., 1], seg[..., 0])
+    green = (g > 110) & (g > 1.5 * r) & (g > 1.5 * b)
+    return int(green.sum()) >= h.gather_bar_min_pixels
+
+
 def choose_player(predictions: Sequence, config: Config, size: tuple[int, int]) -> tuple[Point, bool]:
     """
     The player is the "player" detection nearest where the player usually stands.
@@ -201,7 +217,9 @@ class Perceiver:
             low = not health or health[0].class_name == "low"
         loading = None
         if want_loading_bar:
-            loading = len(predict(self.models.loading_bar, frame)) > 0
+            loading = read_gather_bar(frame, self.config)
+            if loading is None or self.config.health.gather_bar_model:
+                loading = len(predict(self.models.loading_bar, frame)) > 0
         return Status(timestamp, spells, self.spell_slots.calibrated, low, loading, fraction, frame)
 
     def grab(self) -> tuple[Any, tuple[int, int], float, float]:

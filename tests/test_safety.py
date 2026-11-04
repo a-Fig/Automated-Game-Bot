@@ -312,3 +312,15 @@ def test_death_or_quit_prevents_further_inputs():
     w.brain.quit.set()
     with pytest.raises(SafetyStop):
         w.ctx.wait(1)
+
+
+def test_gather_bar_is_read_from_green_pixels_not_the_model():
+    from albot.vision import read_gather_bar
+    frame = hud(1.0)
+    assert read_gather_bar(frame, Config()) is False
+    frame[1024:1037, 1020:1110] = (40, 200, 60)  # BGR green fill, as in a live gather
+    assert read_gather_bar(frame, Config()) is True
+    assert read_gather_bar(Image.fromarray(frame[:, :, ::-1]), Config()) is True
+    assert read_gather_bar(np.zeros((10, 10, 3), dtype=np.uint8), Config()) is None
+    status = perceiver().status_from(frame, 1, True)
+    assert status.loading_bar is True

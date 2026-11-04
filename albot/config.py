@@ -144,6 +144,10 @@ class HealthConfig:
     energy_bar: tuple[int, int, int, int] = (105, 72, 245, 80)
     low_threshold: float = 0.4
     model_fallback: bool = False
+    # The green gathering/skinning progress bar under the player; window pixels at 2240x1400.
+    gather_bar: tuple[int, int, int, int] = (1015, 1024, 1280, 1037)
+    gather_bar_min_pixels: int = 30
+    gather_bar_model: bool = False   # the old loading_bar model; it fires on health bars
 
 
 @dataclass
@@ -212,7 +216,7 @@ def _build(cls, data: dict[str, Any], path: str):
             value = [CastStep(**v) for v in value]
         elif name == "fallback":
             value = CastStep(**value)
-        elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar"):
+        elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar", "gather_bar"):
             value = tuple(value)
         kwargs[name] = value
     return cls(**kwargs)
