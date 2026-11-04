@@ -383,6 +383,17 @@ class NavigateTo:
         self.index = 1
         self.best_distance, self.progress_at = math.inf, now
 
+    def _clear_from(self, point, target) -> bool:
+        """Line check from the player's exact spot or from its grid cell.
+
+        Routes are planned from the rounded cell, so a sub-pixel start like
+        (230.05, 121.49) could clip a blocked corner that the planned segment
+        from (230, 121) avoids. Seen live on 2026-11-04: every tick then
+        reported "no clear segment" and the walk never started.
+        """
+        cell = Point(round(point.x), round(point.y))
+        return self.grid.line_clear(point, target) or self.grid.line_clear(cell, target)
+
     def tick(self, frame, now: float) -> NavigationStep:
         if self.last_tick is not None and now < self.last_tick:
             raise ValueError("navigation timestamps must increase")
@@ -422,10 +433,10 @@ class NavigateTo:
                 self.replans += 1
             if self.index >= len(self.route):
                 return NavigationStep("no_route", location, message="no route within arrival tolerance")
-            if not self.grid.line_clear(point, self.route[self.index]):
+            if not self._clear_from(point, self.route[self.index]):
                 self._plan(point, now)
             if (self.index >= len(self.route)
-                    or not self.grid.line_clear(point, self.route[self.index])):
+                    or not self._clear_from(point, self.route[self.index])):
                 return NavigationStep("no_route", location, message="no clear segment from current position")
             target = self.route[self.index]
             distance = point.dist(target)

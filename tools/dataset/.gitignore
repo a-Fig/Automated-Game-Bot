@@ -1,0 +1,4 @@
+sample_frames/
+out*/
+cache/
+__pycache__/
