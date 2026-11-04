@@ -141,3 +141,44 @@ def test_run_hold_treats_a_loading_screen_as_a_zone_change_and_leaves_the_map_al
     status, _ = run_hold(cfg, nav, positions, lambda: next(black), inp, 60, clock=clock, sleep=clock.sleep)
     assert status == "zone_changed"
     assert inp.actions[-1] == ("release_move",)
+
+
+def test_bouncing_between_two_spots_does_not_reset_the_detour_budget():
+    """Live 2026-11-04: a ledge bounce 2.6 px apart reset detours forever."""
+    steer, cfg = steer_task()
+    t, spot, status = 0.0, 0, "steer"
+    while status != "stalled":
+        point = (5, 0) if spot == 0 else (5, 2.6)  # sideways, no closer to the goal
+        step = steer.update(point, t)
+        status = step.status
+        if step.message.startswith("stall"):
+            spot ^= 1
+        t += 0.1
+        assert t < 60
+    assert steer.detour_count == cfg.detours
+
+
+def test_trails_route_either_direction_and_persist(tmp_path):
+    from albot.hold_travel import Trails
+    path = tmp_path / "hold_trails.json"
+    trails = Trails(path)
+    walked = [(230+0.1*i, 130+0.05*i) for i in range(200)]  # (230,130) -> (249.9,139.95)
+    assert trails.add(walked, when="test")
+    assert not trails.add([(1, 1), (1.1, 1.1)])  # too short after thinning
+    loaded = Trails(path)
+    forward = loaded.route((231, 130.2), (245, 137.4))
+    assert forward[0] == Point(231, 130.2) and forward[-1] == Point(245, 137.4)
+    assert all(a.x <= b.x+1e-9 for a, b in zip(forward[1:-1], forward[2:-1]))
+    backward = loaded.route((248, 139), (233, 131.5))
+    assert backward is not None and backward[1].x > backward[-2].x
+    assert loaded.route((200, 100), (245, 137.4)) is None  # start not near the trail
+
+
+def test_route_toward_follows_a_trail_to_its_point_nearest_a_goal_past_its_end(tmp_path):
+    from albot.hold_travel import Trails
+    trails = Trails(tmp_path / "t.json")
+    trails.add([(230+0.1*i, 130) for i in range(100)])  # ends at (239.9,130)
+    partial = trails.route_toward((231, 130.5), (250, 125))
+    assert partial[0] == Point(231, 130.5) and partial[-1].dist(Point(239.9, 130)) < 0.5
+    assert trails.route((231, 130.5), (250, 125)) is None
+    assert trails.route_toward((231, 130.5), (229, 140)) is None  # no progress along the trail

@@ -7,3 +7,5 @@ replay_out/
 training_data/
 assets/zones/*/learned.json
 assets/zones/*/learned.json.tmp
+assets/zones/*/hold_trails.json
+assets/zones/*/hold_trails.json.tmp

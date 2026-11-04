@@ -17,9 +17,11 @@ Nothing here learns evidence: a hold run never writes learned.json.
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -70,6 +72,20 @@ def map_to_tab(transform, point):
     return Point(*np.linalg.solve(matrix[:, :2], np.asarray(point, float)-matrix[:, 2]))
 
 
+def route_progress(route, point):
+    """Arc length along the route to the point closest to `point`."""
+    best, travelled, best_progress = math.inf, 0.0, 0.0
+    for a, b in zip(route, route[1:]):
+        ab = np.subtract(b, a)
+        length = float(np.linalg.norm(ab))
+        t = float(np.clip(np.subtract(point, a)@ab/max(length*length, 1e-9), 0, 1))
+        d = math.dist(point, np.add(a, t*ab))
+        if d < best:
+            best, best_progress = d, travelled+t*length
+        travelled += length
+    return best_progress
+
+
 def route_ahead(route, point, distance):
     """The point `distance` map px along the route from the closest point to `point`."""
     if len(route) < 2:
@@ -108,7 +124,7 @@ class HoldConfig:
     stall_pixels: float = 0.5
     detour_seconds: float = 1.0
     detours: int = 4              # per spot, then give up
-    detour_reset: float = 2.0     # map px from the first stall of a spot
+    detour_reset: float = 2.0     # map px further along the route than the first stall of a spot
 
 
 @dataclass
@@ -130,6 +146,7 @@ class HoldSteer:
         self.landing_score = landing_score or (lambda point, direction: 0)
         self.anchor = self.anchor_at = None
         self.detour_spot, self.detour_count, self.side = None, 0, 1
+        self.detour_progress = 0.0
         self.detour_until, self.detour_direction = -math.inf, None
 
     def cursor(self, direction):
@@ -139,7 +156,12 @@ class HoldSteer:
         point = Point(*point)
         if point.dist(self.goal) <= self.c.arrival:
             return SteerStep("arrived", message=f"arrived at {point.x:.1f},{point.y:.1f}")
-        if self.detour_spot is not None and point.dist(self.detour_spot) > self.c.detour_reset:
+        # Reset only on real progress along the route. Live 2026-11-04: bouncing
+        # between two ledge spots reset a distance-from-stall count forever, and
+        # straight-line distance to a portal grew shorter on a detour that led
+        # nowhere, since the route first heads away from the portal.
+        if (self.detour_spot is not None
+                and route_progress(self.route, point) > self.detour_progress+self.c.detour_reset):
             self.detour_spot, self.detour_count = None, 0
         target = route_ahead(self.route, point, self.c.lookahead)
         direction = self.matrix@np.subtract(target, point)
@@ -155,7 +177,7 @@ class HoldSteer:
                 return SteerStep("stalled", message=f"stalled at {point.x:.1f},{point.y:.1f} "
                                                     f"after {self.detour_count} detours")
             if self.detour_count == 0:
-                self.detour_spot = point
+                self.detour_spot, self.detour_progress = point, route_progress(self.route, point)
                 self.side = 1 if (self.landing_score(point, rotate(direction, 60))
                                   >= self.landing_score(point, rotate(direction, -60))) else -1
             angle = (60 if self.detour_count < 2 else 100)*(self.side if self.detour_count % 2 == 0 else -self.side)
@@ -205,3 +227,89 @@ def road_landing_score(nav, matrix):
                    and bool(road[y, x]))
         return 2*on_road+nav.grid.is_safe(landing)
     return score
+
+
+class Trails:
+    """Paths hold travel actually walked, in live map pixels (local, gitignored).
+
+    The planner's mask is a visual guess: on 2026-11-04 it routed a basin-to-road
+    trip over a ledge, while the real passage was 3 px west. A trail that worked
+    once is ground truth, so a later trip near both its ends follows it.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path) if path is not None else None
+        self.trails = []
+        if self.path is not None and self.path.exists():
+            self.trails = json.loads(self.path.read_text(encoding="utf-8"))["trails"]
+
+    def add(self, points, spacing=0.4, when=""):
+        thinned = []
+        for p in points:
+            if not thinned or math.dist(p, thinned[-1]) >= spacing:
+                thinned.append([round(float(p[0]), 2), round(float(p[1]), 2)])
+        if len(thinned) < 2:
+            return False
+        self.trails.append({"at": when, "points": thinned})
+        if self.path is not None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temp = self.path.with_suffix(".json.tmp")
+            temp.write_text(json.dumps({"version": 1, "trails": self.trails}, indent=1)+"\n", encoding="utf-8")
+            temp.replace(self.path)
+        return True
+
+    def _graph(self, link):
+        nodes = [tuple(p) for trail in self.trails for p in trail["points"]]
+        edges = {i: [] for i in range(len(nodes))}
+        k = 0
+        for trail in self.trails:
+            for a in range(k, k+len(trail["points"])-1):
+                edges[a].append(a+1)
+                edges[a+1].append(a)
+            k += len(trail["points"])
+        array = np.asarray(nodes, float).reshape(-1, 2)
+        for a in range(len(nodes)):
+            close = np.flatnonzero(np.linalg.norm(array-array[a], axis=1) <= link)
+            edges[a].extend(int(b) for b in close if b != a)
+        return nodes, edges
+
+    def route_toward(self, start, goal, near=2.5, gain=3.0, link=1.0):
+        """Shortest walk over all saved trails, from near start to the trail point closest to goal.
+
+        Trails link wherever they pass within `link` map px, so a road trail and a
+        basin trail chain into one route. Needs `gain` map px of progress; the
+        caller plans whatever remains past the trails.
+        """
+        import heapq
+        nodes, edges = self._graph(link)
+        distance, parent, queue = {}, {}, []
+        for i, node in enumerate(nodes):
+            d = math.dist(node, start)
+            if d <= near:
+                distance[i] = d
+                heapq.heappush(queue, (d, i))
+        while queue:
+            d, i = heapq.heappop(queue)
+            if d > distance[i]:
+                continue
+            for j in edges[i]:
+                nd = d+math.dist(nodes[i], nodes[j])
+                if nd < distance.get(j, math.inf):
+                    distance[j], parent[j] = nd, i
+                    heapq.heappush(queue, (nd, j))
+        if not distance:
+            return None
+        end = min(distance, key=lambda i: (round(math.dist(nodes[i], goal), 1), distance[i]))
+        if math.dist(nodes[end], goal) > math.dist(start, goal)-gain:
+            return None
+        path = [end]
+        while path[-1] in parent:
+            path.append(parent[path[-1]])
+        return [Point(*start), *(Point(*nodes[i]) for i in reversed(path))]
+
+    def route(self, start, goal, near=2.5):
+        """A route over saved trails that ends within `near` of goal, or None."""
+        partial = self.route_toward(start, goal, near, gain=0.0)
+        if partial is None or partial[-1].dist(Point(*goal)) > near:
+            return None
+        return [*partial, Point(*goal)]
