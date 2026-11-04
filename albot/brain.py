@@ -227,9 +227,9 @@ class Context:
         self.check_safety()
         self.input.move_to(point)
 
-    def click(self, point) -> None:
+    def click(self, point, stop: bool = True) -> None:
         self.check_safety()
-        self.input.click(point)
+        self.input.click(point, stop=stop)
         if self.scene() is not None:
             self.resources.move(self.scene(), point)
 

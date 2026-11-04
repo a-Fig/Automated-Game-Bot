@@ -370,3 +370,15 @@ def test_stuck_block_never_covers_the_players_own_cell():
     assert nav.side_step_at is not None
     step = nav.tick(frame_at(), 6)  # sidestep wait over: block the stuck point, replan
     assert nav.grid.is_safe(step.location.point) and step.status == "move"
+
+
+def test_stuck_block_that_cuts_the_only_route_is_undone():
+    nav = task()
+    for t in range(5):
+        nav.tick(frame_at(), t)
+    assert nav.side_step_at is not None
+    real_block = nav.grid.block
+    nav.grid.block = lambda point, radius: real_block(point, 60)  # cuts everything nearby
+    step = nav.tick(frame_at(), 6)
+    assert step.status == "move" and step.click is not None
+    assert nav.grid.is_safe(step.location.point)

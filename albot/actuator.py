@@ -42,13 +42,14 @@ class Input:
         import keyboard
         keyboard.press_and_release(key)
 
-    def click(self, p: Point) -> None:
-        """Stop, move to p, left click: what helper.clickOn did."""
+    def click(self, p: Point, stop: bool = True) -> None:
+        """Stop, move to p, left click: what helper.clickOn did. Travel skips the stop."""
         self._check_focus()
         import keyboard
         import pyautogui
         try:
-            keyboard.press_and_release(self.keys.stop)
+            if stop:
+                keyboard.press_and_release(self.keys.stop)
             pyautogui.moveTo(*self._to_screen(p), duration=0.2)
             pyautogui.click()
         except pyautogui.FailSafeException as e:
@@ -82,7 +83,7 @@ class DryRunInput:
         self.actions.append(("press", key))
         log.info("[dry run] press %s", key)
 
-    def click(self, p: Point) -> None:
+    def click(self, p: Point, stop: bool = True) -> None:
         self.actions.append(("click", round(p.x), round(p.y)))
         log.info("[dry run] click %d,%d", p.x, p.y)
 

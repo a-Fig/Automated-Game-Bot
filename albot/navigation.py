@@ -442,8 +442,16 @@ class NavigateTo:
             if self.side_step_at is not None:
                 if now-self.side_step_at < self.config.side_step_seconds:
                     return NavigationStep("waiting", location, waypoints=tuple(self.route))
+                saved = self.grid.mask.copy()
                 self.grid.block(self.stuck_point, self.config.stuck_block_radius)
-                self._plan(point, now)
+                try:
+                    self._plan(point, now)
+                except ValueError:
+                    # On a thin corridor the block can cut the only way through
+                    # (live 2026-11-04). Keep the old mask and just replan.
+                    self.grid.mask[...] = saved
+                    self.grid._inflate()
+                    self._plan(point, now)
                 self.side_step_at = None
                 self.replans += 1
             if self.index >= len(self.route):

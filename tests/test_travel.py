@@ -564,3 +564,15 @@ def test_travel_gives_up_after_no_move_so_the_bot_is_not_held_still(monkeypatch,
     assert w.config.behavior.travel_goal == ""
     assert not any(a[0] == "click" for a in w.input.actions)
     assert "travel gave up" in caplog.text
+
+
+def test_forward_travel_reclicks_about_once_a_second_without_the_stop_key(monkeypatch):
+    fake_navigation(monkeypatch, [NavigationStep("move", click=TRAVEL_CLICK)] * 6)
+    w = travel_world()
+    for _ in range(6):
+        see(w)
+        w.tick()
+        w.clock.sleep(0.3)
+    clicks = [a for a in w.input.actions if a[0] == "click"]
+    assert 2 <= len(clicks) <= 3
+    assert ("press", "s") not in w.input.actions

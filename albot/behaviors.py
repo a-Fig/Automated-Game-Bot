@@ -208,6 +208,7 @@ class Travel(Behavior):
         self.retreat_index = -1
         self.last_dash_at = -math.inf
         self.moved_at = None
+        self.clicked_at = -math.inf
 
     def plan(self, ctx, scene, status):
         goal = ctx.config.behavior.travel_goal
@@ -283,7 +284,13 @@ class Travel(Behavior):
             self.task, self.goal, self.moved_at = None, "", None
             return True
         if step.click is not None and step.status in ("move", "sidestep"):
-            ctx.click(step.click)
+            # Live 2026-11-04: a stop-key + click on every fresh frame (~5/s)
+            # kept halting the character, so NavigateTo saw no progress and
+            # sidestepped after 4 s. Keep walking: re-click about once a second.
+            interval = ctx.config.behavior.travel_click_interval
+            if step.status == "sidestep" or ctx.now()-self.clicked_at >= interval:
+                ctx.click(step.click, stop=False)
+                self.clicked_at = ctx.now()
             ctx.travel_moving = True
             ctx.travel_retreating = False
         elif step.status != "waiting":
@@ -374,7 +381,7 @@ class Travel(Behavior):
                 ctx.press(slot)
                 self.last_dash_at = ctx.now()
                 ctx.resources.clear()
-            ctx.click(click)
+            ctx.click(click, stop=False)
             ctx.travel_moving = ctx.travel_retreating = True
         self._wait(ctx)
         return True
