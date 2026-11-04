@@ -200,7 +200,7 @@ def test_attack_without_mob_detection_retreats_instead_of_farming_or_forward_tra
     assert w.ctx.under_attack() and w.ctx.travel_guard.retreat_started is not None
     assert w.input.actions[0] == ("press", "s")
     assert ("press", "f") in w.input.actions
-    clicks = [action for action in w.input.actions if action[0] == "click"]
+    clicks = [action for action in w.input.actions if action[0] == "walk"]
     assert len(clicks) == 1 and clicks[0][1] < PLAYER[0]
     assert w.brain.counts["travel"] == 1 and not w.brain.counts["farm"]
 
@@ -210,7 +210,7 @@ def test_arrival_clears_goal_without_any_more_input_that_tick(monkeypatch, caplo
     w = travel_world()
     see(w, [pred("fiber", 1200, 700)])
     w.tick()
-    assert ("click", *TRAVEL_CLICK) in w.input.actions and w.ctx.travel_moving
+    assert ("walk", *TRAVEL_CLICK) in w.input.actions and w.ctx.travel_moving
     w.input.actions.clear()
     w.clock.sleep(0.3)
     see(w, [pred("fiber", 1200, 700)])
@@ -238,7 +238,7 @@ def test_same_status_frame_is_not_used_for_duplicate_travel_clicks(monkeypatch):
     w.tick()
     w.tick()
     assert len(calls) == 2
-    assert w.input.actions.count(("click", *TRAVEL_CLICK)) == 1
+    assert w.input.actions.count(("walk", *TRAVEL_CLICK)) == 1
 
 
 def test_lost_fix_stops_previous_travel_motion(monkeypatch):
@@ -260,7 +260,7 @@ def test_critical_health_retreats_before_heal_then_quits_at_deadline(monkeypatch
     w.tick()
     assert not w.brain.quit.is_set() and w.ctx.travel_guard.critical_since is not None
     assert ("press", "f") in w.input.actions
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
     w.clock.sleep(8.1)
     with pytest.raises(SafetyStop):
         w.ctx.check_safety()
@@ -280,7 +280,7 @@ def test_low_hp_interrupts_fight_wait_then_dispatches_critical_retreat(monkeypat
     assert w.ctx.active_behavior == ""
     w.input.actions.clear()
     w.tick()
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
     assert not w.brain.quit.is_set()
 
 
@@ -293,8 +293,8 @@ def test_hp_published_during_path_planning_retreats_instead_of_dispatching_forwa
     seed_route(w)
     w.tick()
     assert not w.brain.quit.is_set() and w.ctx.travel_guard.critical_since is not None
-    assert ("click", *TRAVEL_CLICK) not in w.input.actions
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert ("walk", *TRAVEL_CLICK) not in w.input.actions
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
 
 
 def test_critical_retreat_cancels_forward_walk_and_does_not_apply_without_travel():
@@ -350,7 +350,7 @@ def test_damage_during_navigation_planning_yields_to_shield_before_movement(monk
     fake_navigation(monkeypatch, [hit_while_planning])
     w.tick()
     assert w.brain.counts["shield"] == 1
-    assert not any(action[0] == "click" for action in w.input.actions)
+    assert not any(action[0] in ("click", "walk") for action in w.input.actions)
 
 
 def test_enabled_travel_rejects_priority_ahead_of_combat():
@@ -376,7 +376,7 @@ def test_retreat_aims_boots_back_along_visited_route_and_does_not_recast_stale_r
     travel = seed_route(w)
     start_unseen_attack(w)
     aim = next(action for action in w.input.actions if action[0] == "move")
-    click = next(action for action in w.input.actions if action[0] == "click")
+    click = next(action for action in w.input.actions if action[0] == "walk")
     assert aim[1:] == click[1:] and aim[1] < PLAYER[0]
     for _ in range(3):
         w.clock.sleep(0.2)
@@ -409,7 +409,7 @@ def test_retreat_waits_for_four_seconds_without_further_hp_drops_then_resumes(mo
     w.input.actions.clear()
     see(w)
     w.tick()
-    assert ("click", *TRAVEL_CLICK) in w.input.actions
+    assert ("walk", *TRAVEL_CLICK) in w.input.actions
 
 
 def test_second_attack_near_same_spot_blocks_grid_and_replans_around_it(monkeypatch):
@@ -455,7 +455,7 @@ def test_critical_retreat_continues_despite_recovery_then_quits_at_eight_seconds
     seed_route(w)
     w.status(health=0.24, low=True)
     w.tick()
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
     w.clock.sleep(4.1)
     w.status(health=1, low=False)
     see(w)
@@ -477,7 +477,7 @@ def test_positive_minimum_hp_does_not_freeze_critical_escape(monkeypatch):
     w.input.actions.clear()
     w.tick()
     assert not w.ctx.death_guard.dead and not w.brain.quit.is_set()
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
 
 
 def test_unseen_attacker_retreat_does_not_require_any_scene_detections(monkeypatch):
@@ -490,7 +490,7 @@ def test_unseen_attacker_retreat_does_not_require_any_scene_detections(monkeypat
     w.status(health=0.95)
     w.tick()
     assert w.ctx.scene().is_empty()
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
     assert ("press", "esc") not in w.input.actions
 
 
@@ -518,7 +518,7 @@ def test_no_retreat_clicks_without_calibration_or_without_recorded_route(monkeyp
         w = travel_world(calibrated=calibrated)
         w.status(health=0.24)
         w.tick()
-        assert not any(a[0] in ("click", "move") for a in w.input.actions)
+        assert not any(a[0] in ("click", "walk", "move") for a in w.input.actions)
         assert w.ctx.travel_guard.critical_since is not None and not w.brain.quit.is_set()
 
 
@@ -547,7 +547,7 @@ def test_stale_enemy_detections_do_not_block_escape_from_fresh_minimap(monkeypat
     w.status(health=0.95)
     w.tick()
     assert w.ctx.retreat_required()
-    assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+    assert any(a[0] == "walk" and a[1] < PLAYER[0] for a in w.input.actions)
 
 
 def test_travel_gives_up_after_no_move_so_the_bot_is_not_held_still(monkeypatch, caplog):
@@ -562,7 +562,7 @@ def test_travel_gives_up_after_no_move_so_the_bot_is_not_held_still(monkeypatch,
             break
         w.clock.sleep(0.5)
     assert w.config.behavior.travel_goal == ""
-    assert not any(a[0] == "click" for a in w.input.actions)
+    assert not any(a[0] in ("click", "walk") for a in w.input.actions)
     assert "travel gave up" in caplog.text
 
 
@@ -573,6 +573,6 @@ def test_forward_travel_reclicks_about_once_a_second_without_the_stop_key(monkey
         see(w)
         w.tick()
         w.clock.sleep(0.3)
-    clicks = [a for a in w.input.actions if a[0] == "click"]
+    clicks = [a for a in w.input.actions if a[0] == "walk"]
     assert 2 <= len(clicks) <= 3
     assert ("press", "s") not in w.input.actions

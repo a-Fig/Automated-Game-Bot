@@ -289,7 +289,9 @@ class Travel(Behavior):
             # sidestepped after 4 s. Keep walking: re-click about once a second.
             interval = ctx.config.behavior.travel_click_interval
             if step.status == "sidestep" or ctx.now()-self.clicked_at >= interval:
-                ctx.click(step.click, stop=False)
+                # Right-click walk: a left click on a rock or plant starts
+                # gathering it (seen live 2026-11-04: "+2 Rough Stone" mid-route).
+                ctx.walk_to(step.click)
                 self.clicked_at = ctx.now()
             ctx.travel_moving = True
             ctx.travel_retreating = False
@@ -381,7 +383,7 @@ class Travel(Behavior):
                 ctx.press(slot)
                 self.last_dash_at = ctx.now()
                 ctx.resources.clear()
-            ctx.click(click, stop=False)
+            ctx.walk_to(click)
             ctx.travel_moving = ctx.travel_retreating = True
         self._wait(ctx)
         return True

@@ -237,7 +237,8 @@ class Context:
     def walk_to(self, point) -> None:
         self.check_safety()
         self.input.walk_to(point)
-        self.resources.move(self.scene(), point)
+        if self.scene() is not None:
+            self.resources.move(self.scene(), point)
 
     def cast(self, step) -> None:
         for _ in range(step.repeat):
