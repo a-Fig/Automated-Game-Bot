@@ -1,0 +1,300 @@
+{
+  "version": 1,
+  "zones": {
+    "fractured_ground": {
+      "name": "Fractured Ground",
+      "observations": [
+        {
+          "source": "observed_live",
+          "observed_at": "2026-11-04T04:14",
+          "time_basis": "operator local log, minute precision",
+          "resources": [
+            {
+              "type": "stone",
+              "tiers": [
+                1,
+                1
+              ],
+              "role": null,
+              "t1_ambient": true
+            }
+          ],
+          "evidence": "Operator reported +2 Rough Stone; incident table and eacb3e3.",
+          "t1_ambient": true
+        },
+        {
+          "source": "observed_live",
+          "observed_at": "2026-11-04T11:08",
+          "time_basis": "operator local log, minute precision",
+          "resources": [
+            {
+              "type": "wood",
+              "tiers": [
+                1,
+                1
+              ],
+              "role": null,
+              "t1_ambient": true
+            }
+          ],
+          "evidence": "Operator reported Rough Logs popup near (252,127); ctl/drive.jpg history, not bundled.",
+          "t1_ambient": true
+        },
+        {
+          "source": "wiki",
+          "url": "https://wiki.albiononline.com/wiki/Fractured_Ground",
+          "fetched_at": "2026-11-04",
+          "resources": [
+            {
+              "type": "hide",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "primary"
+            },
+            {
+              "type": "fiber",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "secondary"
+            },
+            {
+              "type": "ore",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "tertiary"
+            },
+            {
+              "type": "wood",
+              "tiers": [
+                1,
+                1
+              ],
+              "role": null,
+              "t1_ambient": true
+            },
+            {
+              "type": "hide",
+              "tiers": [
+                1,
+                1
+              ],
+              "role": null,
+              "t1_ambient": true
+            }
+          ],
+          "notes": "T1 hide/logs are ambient and do not define zone resource types. T2+ list agrees with the header."
+        },
+        {
+          "source": "ingame_tab",
+          "capture": "../datasets/albion_v2/tabmap/fg_04.png",
+          "captured_at": "2026-11-04",
+          "extracted_at": "2026-11-04T19:52:03.205502+00:00",
+          "tab_header_min_tier": 2,
+          "complete_t2plus": true,
+          "resources": [
+            {
+              "type": "hide",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": null
+            },
+            {
+              "type": "fiber",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": null
+            },
+            {
+              "type": "ore",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": null
+            }
+          ],
+          "absent_t2plus": [
+            "wood",
+            "stone"
+          ],
+          "readings": {
+            "wood": {
+              "state": "absent_t2plus",
+              "icon_score": 0.9995,
+              "caption_score": 0.9996
+            },
+            "stone": {
+              "state": "absent_t2plus",
+              "icon_score": 0.9992,
+              "caption_score": 0.9995
+            },
+            "hide": {
+              "state": "present",
+              "icon_score": 1.0,
+              "caption_score": 0.9999
+            },
+            "fiber": {
+              "state": "present",
+              "icon_score": 1.0,
+              "caption_score": 0.9999
+            },
+            "ore": {
+              "state": "present",
+              "icon_score": 1.0,
+              "caption_score": 0.9999
+            }
+          },
+          "warnings": [],
+          "capture_date_basis": "operator"
+        }
+      ],
+      "neighbours": {
+        "source": "wiki",
+        "url": "https://wiki.albiononline.com/wiki/Fractured_Ground",
+        "fetched_at": "2026-11-04",
+        "zones": [
+          "bridgewatch",
+          "vixen_tor",
+          "prospectors_hope",
+          "steppe_cross"
+        ],
+        "notes": "Open-world neighbours only; not live verified exit-direction mappings. Wiki also mentions Heretic Cellar Network."
+      }
+    },
+    "vixen_tor": {
+      "name": "Vixen Tor",
+      "observations": [
+        {
+          "source": "user (Tyler, 2026-11-04)",
+          "observed_at": "2026-11-04",
+          "resources": [
+            {
+              "type": "wood",
+              "tiers": null,
+              "role": null
+            },
+            {
+              "type": "stone",
+              "tiers": null,
+              "role": null
+            },
+            {
+              "type": "ore",
+              "tiers": null,
+              "role": null
+            }
+          ],
+          "notes": "Tyler lists wood, stone and ore as zone types and explicitly no fiber. Tiers are unknown; ambient T1 is outside this list.",
+          "complete_t2plus": true,
+          "resource_min_tier": 2,
+          "absent_t2plus": [
+            "fiber"
+          ]
+        },
+        {
+          "source": "wiki",
+          "url": "https://wiki.albiononline.com/wiki/Vixen_Tor",
+          "fetched_at": "2026-11-04",
+          "resources": [
+            {
+              "type": "stone",
+              "tiers": [
+                2,
+                4
+              ],
+              "role": "primary"
+            },
+            {
+              "type": "ore",
+              "tiers": [
+                2,
+                4
+              ],
+              "role": "secondary"
+            },
+            {
+              "type": "wood",
+              "tiers": [
+                2,
+                4
+              ],
+              "role": "tertiary"
+            }
+          ],
+          "notes": "Wiki agrees on the three listed types and does not list fiber. Advisory, not enforcement authority."
+        }
+      ]
+    },
+    "prospectors_hope": {
+      "name": "Prospector's Hope",
+      "observations": [
+        {
+          "source": "wiki",
+          "url": "https://wiki.albiononline.com/wiki/Prospector%27s_Hope",
+          "fetched_at": "2026-11-04",
+          "resources": [
+            {
+              "type": "hide",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "primary"
+            },
+            {
+              "type": "fiber",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "secondary"
+            },
+            {
+              "type": "ore",
+              "tiers": [
+                2,
+                3
+              ],
+              "role": "tertiary"
+            }
+          ],
+          "notes": "No in-game verification; never infer all-tier absence from this list."
+        }
+      ]
+    },
+    "bridgewatch": {
+      "name": "Bridgewatch",
+      "observations": [
+        {
+          "source": "wiki",
+          "url": "https://wiki.albiononline.com/wiki/Bridgewatch",
+          "fetched_at": "2026-11-04",
+          "resources": null,
+          "notes": "City/refining page does not establish harvestable types or tiers. Unknown, not an empty list."
+        }
+      ]
+    },
+    "steppe_cross": {
+      "name": "Steppe Cross",
+      "observations": [
+        {
+          "source": "wiki",
+          "url": "https://wiki.albiononline.com/wiki/Steppe_Cross",
+          "fetched_at": "2026-11-04",
+          "resources": null,
+          "notes": "Starter-city page does not establish harvestable types or tiers. Unknown, not an empty list."
+        }
+      ]
+    }
+  }
+}

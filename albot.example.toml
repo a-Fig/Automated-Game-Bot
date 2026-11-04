@@ -26,6 +26,8 @@ class_confidence = {}      # per-class overrides, e.g. { silver = 0.55 }
 mob_classes = ["mob"]
 threat_classes = ["red"]
 farm_classes = ["hide", "fiber"]
+# assets/zones/resources.json optionally filters T2+ types; ambient T1 is not a zone type.
+# It never enables an unconfigured class; missing/unverified-only zones keep existing behavior.
 pickup_classes = ["silver", "cup of piss"]
 wisp_classes = ["wisp caged"]
 player_class = "player"

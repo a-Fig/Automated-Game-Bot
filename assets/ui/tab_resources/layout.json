@@ -1,0 +1,116 @@
+{
+  "window_size": [
+    2240,
+    1400
+  ],
+  "header_rect": [
+    1595,
+    32,
+    1979,
+    124
+  ],
+  "tab_header_min_tier": 2,
+  "source": "datasets/albion_v2/tabmap/fg_04.png",
+  "capture_date": "2026-11-04",
+  "slots": [
+    {
+      "type": "wood",
+      "icon_rect": [
+        1612,
+        40,
+        1674,
+        100
+      ],
+      "caption_rect": [
+        1612,
+        102,
+        1670,
+        118
+      ],
+      "icon": "wood_icon.png",
+      "caption": "wood_caption.png",
+      "caption_tiers": null
+    },
+    {
+      "type": "stone",
+      "icon_rect": [
+        1687,
+        40,
+        1749,
+        100
+      ],
+      "caption_rect": [
+        1687,
+        102,
+        1745,
+        118
+      ],
+      "icon": "stone_icon.png",
+      "caption": "stone_caption.png",
+      "caption_tiers": null
+    },
+    {
+      "type": "hide",
+      "icon_rect": [
+        1762,
+        40,
+        1824,
+        100
+      ],
+      "caption_rect": [
+        1762,
+        102,
+        1820,
+        118
+      ],
+      "icon": "hide_icon.png",
+      "caption": "hide_caption.png",
+      "caption_tiers": [
+        2,
+        3
+      ]
+    },
+    {
+      "type": "fiber",
+      "icon_rect": [
+        1837,
+        40,
+        1899,
+        100
+      ],
+      "caption_rect": [
+        1837,
+        102,
+        1895,
+        118
+      ],
+      "icon": "fiber_icon.png",
+      "caption": "fiber_caption.png",
+      "caption_tiers": [
+        2,
+        3
+      ]
+    },
+    {
+      "type": "ore",
+      "icon_rect": [
+        1912,
+        40,
+        1974,
+        100
+      ],
+      "caption_rect": [
+        1912,
+        102,
+        1970,
+        118
+      ],
+      "icon": "ore_icon.png",
+      "caption": "ore_caption.png",
+      "caption_tiers": [
+        2,
+        3
+      ]
+    }
+  ]
+}

@@ -1,12 +1,67 @@
-"""Resource failure history in an approximate, camera-independent pixel space."""
+"""Sourced zone resource types and failure history in approximate world pixels."""
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 
 from .geometry import Point
 
 log = logging.getLogger(__name__)
+
+
+RESOURCE_TYPES = frozenset(("hide", "fiber", "ore", "wood", "stone"))
+RESOURCE_ALIASES = {"cotton": "fiber", "log": "wood", "tree": "wood"}
+
+
+def zone_resource_exclusions(navigation):
+    """A trusted T2+ list permits filtering; any T2+ positive vetoes exclusion."""
+    from .navigation import Zone
+
+    path = (Zone.asset_folder(navigation.zone, navigation).parent / "resources.json").resolve()
+    return _zone_resource_exclusions(path, navigation.zone)
+
+
+@lru_cache(maxsize=16)
+def _zone_resource_exclusions(path, zone):
+    # Catalogue data is fixed for a run. Never load navigation masks/learning or
+    # fetch the network in a scene worker. Restart after a catalogue refresh.
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    if data.get("version") != 1:
+        raise ValueError("unsupported zone resource catalogue version")
+    observations = data.get("zones", {}).get(zone, {}).get("observations", [])
+    positive, excluded, complete = set(), set(), False
+    for observation in observations:
+        resources = observation.get("resources")
+        if resources is None:
+            continue  # unknown is not an empty resource list
+        if any(resource["type"] not in RESOURCE_TYPES for resource in resources):
+            raise ValueError("unknown zone resource type")
+        types = {resource["type"] for resource in resources
+                 if not observation.get("t1_ambient") and not resource.get("t1_ambient")
+                 and (resource.get("tiers") is None or resource["tiers"][1] >= 2)}
+        positive.update(types)  # advisory evidence may protect a type, never create a negative
+        source = observation.get("source", "")
+        trusted = source in ("ingame_tab", "user") or source.startswith("user (")
+        if not trusted or observation.get("t1_ambient"):
+            continue
+        complete |= observation.get("complete_t2plus", False)
+        absent = set(observation.get("absent_t2plus", []))
+        if not absent <= RESOURCE_TYPES:
+            raise ValueError("unknown absent zone resource type")
+        excluded.update(absent)
+    if complete:
+        excluded.update(RESOURCE_TYPES-positive)
+    return frozenset(excluded-positive)
+
+
+def resource_type(class_name):
+    return RESOURCE_ALIASES.get(class_name, class_name)
 
 
 @dataclass
