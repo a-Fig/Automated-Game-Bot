@@ -71,7 +71,7 @@ def test_health_coordinates_and_threshold_are_configurable():
     cfg.health.energy_bar = (10, 20, 110, 30)
     cfg.health.low_threshold = 0.6
     frame = np.zeros((100, 200, 3), dtype=np.uint8)
-    frame[15, 10:60] = (0, 0, 150)
+    frame[10:20, 10:60] = (0, 0, 150)
     status = perceiver(cfg).status_from(frame, 1, False)
     assert status.health_fraction == 0.5 and status.low_health
     cfg.health.bar = (-1, 10, 110, 20)

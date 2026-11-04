@@ -70,7 +70,15 @@ def predict(model: Any, image: Any) -> list:
 
 
 def read_health(frame: Any, config: Config) -> float | None:
-    """Share of red pixels on the HUD's middle row, ignoring white text."""
+    """
+    How far the red fill reaches along the HUD health bar, as a fraction.
+
+    It samples two rows, just inside the bar's top and bottom edges, because the
+    white "2351 / 2351" text covers the middle row. Measuring how far the fill
+    reaches, not the share of red pixels, keeps the reading near 1.0 at full health
+    even when the game darkens the whole screen (seen 2026-11-04: a share-of-red
+    reading gave 0.83 at full health, and 0.62 on a darkened frame).
+    """
     import numpy as np
 
     rgb = hasattr(frame, "convert")  # PIL captures are RGB; numpy captures are BGR
@@ -79,26 +87,27 @@ def read_health(frame: Any, config: Config) -> float | None:
     if pixels.ndim != 3 or pixels.shape[2] < 3 or pixels.shape[1::-1] != h.window_size:
         return None
 
-    def row(rect):
+    def rows(rect):
         x0, y0, x1, y1 = rect
         if not (0 <= x0 < x1 <= pixels.shape[1] and 0 <= y0 < y1 <= pixels.shape[0]):
             return None
-        colors = pixels[(y0 + y1) // 2, x0:x1, :3].astype(float)
-        return colors if rgb else colors[:, ::-1]
+        ys = sorted({min(y0 + 2, y1 - 1), max(y1 - 4, y0)})
+        colors = pixels[ys, x0:x1, :3].astype(float)
+        return colors if rgb else colors[:, :, ::-1]
 
-    health, energy = row(h.bar), row(h.energy_bar)
+    health, energy = rows(h.bar), rows(h.energy_bar)
     if health is None or energy is None:
         return None
-    usable = ~np.all(health >= 200, axis=1)
-    if not usable.any():
-        return None
-    red = (health[:, 0] >= 70) & (health[:, 0] > health[:, 1] * 1.5) & (health[:, 0] > health[:, 2] * 1.5)
-    blue = (energy[:, 2] >= 70) & (energy[:, 2] > energy[:, 0] * 1.5) & (energy[:, 2] > energy[:, 1] * 1.5)
+    r, g, b = health[..., 0], health[..., 1], health[..., 2]
+    red = (r >= 55) & (r > g * 1.5) & (r > b * 1.5)
+    e_r, e_g, e_b = energy[..., 0], energy[..., 1], energy[..., 2]
+    blue = (e_b >= 55) & (e_b > e_r * 1.4) & (e_b > e_g * 1.05)
     # An empty/hidden HUD must not look like death. Blue energy anchors a zero-red
     # reading; simultaneous empty health and energy needs respawn-screen recognition.
     if not red.any() and not blue.any():
         return None
-    return float(np.count_nonzero(red & usable) / np.count_nonzero(usable))
+    reach = max((np.nonzero(line)[0][-1] + 1 for line in red if line.any()), default=0)
+    return float(reach / red.shape[1])
 
 
 def choose_player(predictions: Sequence, config: Config, size: tuple[int, int]) -> tuple[Point, bool]:
