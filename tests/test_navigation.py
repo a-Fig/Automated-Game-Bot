@@ -275,7 +275,8 @@ def test_stuck_recovery_is_bounded_and_lost_time_does_not_count():
 
 def test_player_in_blocked_mask_does_not_click_through_wall():
     nav = task()
-    nav.grid.block((235, 145), 6)
+    nav.zone.grid.block((235, 145), 6)
+    nav.grid = nav._fresh_grid()  # a real wall in the zone mask, not a stuck block
     step = nav.tick(frame_at(), 0)
     assert step.status == "no_route" and step.click is None
 
@@ -356,7 +357,8 @@ def test_live_probe_routine_with_fake_capture_clock_and_input_only(tmp_path, mon
 
 def test_player_just_off_clear_mask_walks_back_to_nearest_clear_cell():
     nav = task()
-    nav.grid.block((235, 145), 1)  # off by a pixel or two, as seen live
+    nav.zone.grid.block((235, 145), 1)  # off by a pixel or two, as seen live
+    nav.grid = nav._fresh_grid()  # a real wall in the zone mask, not a stuck block
     assert not nav.grid.is_safe((235, 145))
     step = nav.tick(frame_at(), 0)
     assert step.status == "move" and step.click is not None
@@ -382,5 +384,13 @@ def test_stuck_block_that_cuts_the_only_route_is_undone():
     real_block = nav.grid.block
     nav.grid.block = lambda point, radius: real_block(point, 60)  # cuts everything nearby
     step = nav.tick(frame_at(), 6)
+    assert step.status == "move" and step.click is not None
+    assert nav.grid.is_safe(step.location.point)
+
+
+def test_player_standing_inside_a_private_stuck_block_clears_the_blocks():
+    nav = task()
+    nav.grid.block((235, 145), 8)  # a wrong stuck block right on top of the player
+    step = nav.tick(frame_at(), 0)
     assert step.status == "move" and step.click is not None
     assert nav.grid.is_safe(step.location.point)

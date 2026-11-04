@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,8 @@ import numpy as np
 
 from .config import NavigationConfig
 from .geometry import Point
+
+log = logging.getLogger(__name__)
 
 
 class Location(NamedTuple):
@@ -438,8 +441,7 @@ class NavigateTo:
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
-        self.grid = self.zone.grid.copy_with(self.config.clearance if self.config.clearance is not None
-                                             else self.zone.grid.clearance, self.config.snap_radius)
+        self.grid = self._fresh_grid()
         self.locator = MapLocator(self.config, self.zone.metadata["terrain_polygon"])
         self.allow_uncalibrated = allow_uncalibrated
         self.route: list[Point] = []
@@ -451,6 +453,10 @@ class NavigateTo:
         self.replans = 0
         self.failed = False
         self.last_tick = None
+
+    def _fresh_grid(self):
+        return self.zone.grid.copy_with(self.config.clearance if self.config.clearance is not None
+                                        else self.zone.grid.clearance, self.config.snap_radius)
 
     def _plan(self, start, now):
         self.route = self.grid.plan(start, self.goal)
@@ -482,6 +488,12 @@ class NavigateTo:
         point = location.point
         if point.dist(self.goal) <= self.config.arrival_tolerance:
             return NavigationStep("arrived", location, waypoints=tuple(self.route))
+        if not self.grid.is_safe(point) and self._fresh_grid().is_safe(point):
+            # The player is standing on ground that only this task's stuck blocks
+            # closed (live 2026-11-04, run 5): those blocks were wrong. Drop them.
+            log.info("navigation: player inside a private stuck block at %.1f,%.1f; clearing blocks",
+                     point.x, point.y)
+            self.grid, self.route = self._fresh_grid(), []
         if not self.grid.is_safe(point):
             # Seen live on 2026-11-04: the character drifted a pixel off a thin
             # corridor and every later tick returned no_route. Walk back to the
