@@ -180,7 +180,7 @@ def test_snap_is_bounded_and_goal_inputs_validated():
 
 
 def test_bundled_zone_routes_recorded_position_to_ne_portal():
-    zone = Zone.load("fractured_ground")
+    zone = Zone.load("fractured_ground", learned=False)
     result = locate(recorded_frame("frame_minimap_1.png"))
     route = zone.grid.plan(result.point, zone.goal("portal:NE"))
     assert route[-1].dist(zone.goal("portal:NE")) <= 3
@@ -300,6 +300,8 @@ def test_bad_calibration_samples_rejected(samples):
 
 def test_saved_image_cli_never_uses_live_capture_or_input(tmp_path, monkeypatch, capsys):
     from albot import app
+    load_zone = Zone.load
+    monkeypatch.setattr(Zone, "load", lambda name, config=None: load_zone(name, config, learned=False))
     path = tmp_path / "frame.png"
     cv2.imwrite(str(path), recorded_frame("frame_minimap_1.png"))
     monkeypatch.setattr(navigation_cli, "live_capture", lambda cfg: pytest.fail("no live capture"))
@@ -337,6 +339,8 @@ def test_calibration_cli_requires_execute_and_solve_is_offline(tmp_path, monkeyp
 def test_live_probe_routine_with_fake_capture_clock_and_input_only(tmp_path, monkeypatch):
     from albot import actuator, vision
     from albot.window import FixedWindow
+    load_zone = Zone.load
+    monkeypatch.setattr(Zone, "load", lambda name, config=None: load_zone(name, config, learned=False))
     now, clicks = [0.0], []
     fake_time = SimpleNamespace(monotonic=lambda: now[0], sleep=lambda seconds: now.__setitem__(0, now[0]+seconds))
     monkeypatch.setattr(navigation_cli, "time", fake_time)

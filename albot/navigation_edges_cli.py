@@ -7,7 +7,7 @@ from .navigation_evidence import LearnedEvidence
 
 
 def cmd_edges(cfg, args):
-    zone = Zone.load(args.zone or cfg.navigation.zone, cfg.navigation)
+    zone = Zone.load(args.zone or cfg.navigation.zone, cfg.navigation, learned=False)
     path = args.file or zone.folder / "learned.json"
     scale = zone.grid.scale
     size = (zone.grid.mask.shape[1]//scale, zone.grid.mask.shape[0]//scale)

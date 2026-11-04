@@ -333,7 +333,7 @@ class Zone:
     road: np.ndarray | None = None
 
     @classmethod
-    def load(cls, name: str, config: NavigationConfig | None = None):
+    def load(cls, name: str, config: NavigationConfig | None = None, *, learned: bool = True):
         cfg = config or NavigationConfig()
         if not name or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789_" for c in name):
             raise ValueError("zone name must contain only lowercase letters, digits and underscores")
@@ -356,7 +356,7 @@ class Zone:
         x0, y0, x1, y1 = cfg.minimap_rect
         if grid.mask.shape != ((y1-y0)*scale, (x1-x0)*scale):
             raise ValueError("zone mask and minimap crop must have the same dimensions")
-        evidence = LearnedEvidence(folder / "learned.json", name, (x1-x0, y1-y0), scale)
+        evidence = LearnedEvidence(folder / "learned.json" if learned else None, name, (x1-x0, y1-y0), scale)
         base = grid.copy_with(clearance, cfg.snap_radius)
         evidence.apply(grid)
         road = None

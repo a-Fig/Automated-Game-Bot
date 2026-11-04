@@ -158,6 +158,9 @@ individual `edges` entries to retract a mistaken collision. Keep a copy when
 changing map coordinates, zoom or UI calibration; the loader checks zone, size,
 scale and coordinate-space tags, but cannot detect an unreported coordinate shift.
 
+`Zone.load(..., learned=False)` loads generated assets alone for isolated fixtures;
+the default continues to load live evidence. Tests forbid opening the repo's runtime file.
+
 Every trusted arrow fix obtained while travel/retreat is moving contributes a
 radius-1-map-px observed-position disc, using the mask builder's same function.
 Discs are deduplicated by native cell (0.25 map px on Fractured Ground); repeated

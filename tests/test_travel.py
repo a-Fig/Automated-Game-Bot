@@ -229,7 +229,10 @@ def test_arrival_clears_goal_without_any_more_input_that_tick(monkeypatch, caplo
     assert calls[-1][0] == "observe"
 
 
-def test_uncalibrated_travel_sends_no_click_and_does_not_fall_through_to_farm():
+def test_uncalibrated_travel_sends_no_click_and_does_not_fall_through_to_farm(monkeypatch):
+    from albot.navigation import Zone
+    load_zone = Zone.load
+    monkeypatch.setattr(Zone, "load", lambda name, config=None: load_zone(name, config, learned=False))
     w = travel_world(calibrated=False)
     see(w, [pred("fiber", 1200, 700)])
     w.tick()

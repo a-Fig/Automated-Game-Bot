@@ -61,13 +61,13 @@ def test_asset_live_registration_stays_below_one_pixel_and_rejects_drift(generat
 def test_corrected_zone_default_and_explicit_config_precedence(tmp_path):
     cfg = NavigationConfig()
     assert cfg.clearance is None
-    zone = Zone.load("fractured_ground", cfg)
+    zone = Zone.load("fractured_ground", cfg, learned=False)
     assert zone.grid.clearance == 1.0
     assert NavigateTo("portal:NE", zone, cfg).grid.clearance == 1.0
     config = tmp_path / "explicit.toml"
     config.write_text("[navigation]\nclearance = 2.0\n")
     explicit = load(str(config)).navigation
-    assert Zone.load("fractured_ground", explicit).grid.clearance == 2
+    assert Zone.load("fractured_ground", explicit, learned=False).grid.clearance == 2
     assert NavigateTo("portal:NE", zone, explicit).grid.clearance == 2
     fake = tmp_path / "zone_without_default"
     fake.mkdir()
@@ -90,7 +90,7 @@ def route_samples(route, scale):
 
 def test_route_to_ne_uses_road_at_level_crossings_and_does_not_cut_cliff(generated):
     _, (_, mask, layers, report) = generated
-    zone = Zone.load("fractured_ground")
+    zone = Zone.load("fractured_ground", learned=False)
     scale = report["parameters"]["scale"]
     grid = ScaledWalkGrid(layers["walkable"], scale, clearance=zone.grid.clearance)
     route = grid.plan((240, 130), zone.goal("portal:NE"))
@@ -190,7 +190,7 @@ def test_local_ramp_overlay_keeps_run8_edges_and_bends_around_cliff(tmp_path, ge
 
 
 def test_all_observed_fixes_are_directly_safe_and_every_walk_pair_plans(observations):
-    zone = Zone.load("fractured_ground")
+    zone = Zone.load("fractured_ground", learned=False)
     assert len(observations["walk_ne_fixes.json"]) == 536
     assert len(observations["visited.json"]) == 723
     for points in observations.values():

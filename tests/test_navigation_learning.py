@@ -37,6 +37,9 @@ def test_learning_roundtrip_loads_discs_and_edges_without_changing_base_mask(tmp
     assert not evidence.observe((10.1, 10.1))  # same native-cell disc
     assert evidence.stall((20, 20), (35, 20), 0, 6, 12.0)
     loaded = Zone.load("test", cfg)
+    isolated = Zone.load("test", cfg, learned=False)
+    assert not isolated.grid.is_safe((10, 10)) and isolated.grid.line_clear((20, 20), (35, 20))
+    assert isolated.evidence.path is None and not isolated.evidence.edges
     assert loaded.grid.is_safe((10, 10)) and not loaded.base_grid.is_safe((10, 10))
     assert not loaded.grid.line_clear((20, 20), (35, 20))
     assert loaded.grid.is_safe((20, 20))
@@ -155,7 +158,7 @@ def test_replay_identifies_the_unreached_ramp_and_excludes_post_travel(tmp_path)
     bot = tmp_path / "run.log"
     bot.write_text("04:27:56 INFO travel move: \n04:28:35 INFO travel stalled: \n"
                    "04:29:05 ERROR travel gave up\n")
-    report = replay(fixture, Zone.load("fractured_ground"), bot_log=bot)
+    report = replay(fixture, Zone.load("fractured_ground", learned=False), bot_log=bot)
     stall = report["stalls"][-1]
     assert stall["from"] == "04:28:31" and stall["seconds"] == 31
     assert Point(*stall["position"]).dist(Point(238.3, 136.2)) < 0.1
@@ -172,7 +175,7 @@ FIXTURES = Path(__file__).parent / "fixtures/navigation"
 def run7_zone(tmp_path, count=8):
     folder = tmp_path / "fractured_ground"
     folder.mkdir()
-    current = Zone.load("fractured_ground")
+    current = Zone.load("fractured_ground", learned=False)
     (folder / "zone.json").write_text(json.dumps(current.metadata))
     shutil.copyfile(FIXTURES / "mask_before_run8.png", folder / "mask_hires.png")
     old = cv2.imread(str(folder / "mask_hires.png"), 0)
@@ -228,7 +231,7 @@ def test_load_keeps_real_cut_edges_and_reports_the_cut_without_rewriting_file(tm
 
 
 def test_corrected_road_routes_around_all_run8_edges():
-    zone = Zone.load("fractured_ground")
+    zone = Zone.load("fractured_ground", learned=False)
     zone.evidence = LearnedEvidence(FIXTURES / "learned_after_run8.json", zone.name, (400, 360), 4)
     original = (FIXTURES / "learned_after_run8.json").read_bytes()
     for point in ((238.57, 143.05), (230.76, 143.71), (221.6, 121.2)):
