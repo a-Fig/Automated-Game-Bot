@@ -217,6 +217,10 @@ class NavigationConfig:
     precision_click_max: float = 150.0  # road and nearby-waypoint clicks; never extend past target
     near_waypoint_distance: float = 3.0
     road_retry_attempts: int = 2  # bounded short probes before backtracking at a disconnecting road stall
+    # A road stall is usually a prop (a wagon, a barrel) far smaller than one map
+    # pixel (~370 screen px). Step around it in screen space before learning an edge.
+    road_sidestep_attempts: int = 2
+    road_sidestep_pixels: float = 350.0
     safe_screen_rect: tuple[int, int, int, int] = (400, 200, 1800, 1100)
     stuck_seconds: float = 4.0
     progress_pixels: float = 0.8

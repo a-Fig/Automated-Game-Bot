@@ -119,12 +119,60 @@ def test_goal_disconnecting_road_stall_is_pending_and_short_retries_are_bounded(
 
 def test_second_road_stall_can_still_learn_an_edge_when_an_alternative_exists(tmp_path):
     nav = road_task(tmp_path, thin=False)
+    nav.config.road_sidestep_attempts = 0  # side-steps come first; this checks the edge stage
     for now in range(8):
         step = nav.tick(None, now, moving=now > 0)
         if step.click is not None:
             nav.note_walk(now)
     assert len(nav.evidence.edges) == 1
     assert nav._connected(nav.grid, (20, 20), nav.goal)
+
+
+def wide_road_task(tmp_path, at=(20, 19)):
+    cfg = saved_zone(tmp_path)
+    cfg.minimap_to_screen = [[100, 0], [0, 100]]
+    zone = Zone.load("test", cfg)
+    zone.grid.mask[:] = True
+    zone.grid._inflate()
+    zone.base_grid = zone.grid.copy_with(0, 8)
+    zone.road = np.zeros(zone.grid.mask.shape, bool)
+    zone.road[17:24] = True
+    nav = NavigateTo((35, at[1]), zone, cfg, learn=True)
+    nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*at, None, 0.95))
+    return nav
+
+
+def test_road_stall_sidesteps_toward_the_road_interior_before_learning(tmp_path):
+    """Run 17: a wagon on the road's upper edge; stepping around it beats an edge across the road."""
+    nav = wide_road_task(tmp_path)
+    steps = []
+    for now in range(30):
+        step = nav.tick(None, now, moving=now > 0)
+        if step.click is not None:
+            nav.note_walk(now)
+        if step.status in ("sidestep", "waiting"):
+            steps.append(step)
+        if len(steps) == 3:
+            break
+    assert [s.status for s in steps] == ["sidestep", "sidestep", "waiting"]
+    player = np.asarray(nav.config.player_screen)
+    first, second = [np.asarray(s.click)-player for s in steps[:2]]
+    assert first[1] > 0 and second[1] < 0  # into the road first, then the other side
+    assert first[0] > 0 and np.linalg.norm(first) == pytest.approx(nav.config.road_sidestep_pixels)
+    assert not nav.evidence.edges and len(nav.evidence.road_stalls) == 1  # only the third stall
+
+
+def test_road_sidestep_can_be_disabled(tmp_path):
+    nav = wide_road_task(tmp_path)
+    nav.config.road_sidestep_attempts = 0
+    for now in range(30):
+        step = nav.tick(None, now, moving=now > 0)
+        if step.click is not None:
+            nav.note_walk(now)
+        assert step.status != "sidestep"
+        if step.status == "waiting":
+            break
+    assert len(nav.evidence.road_stalls) == 1
 
 
 def test_uncalibrated_road_never_proposes_a_precision_click():

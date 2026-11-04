@@ -541,7 +541,9 @@ class NavigateTo:
                 or self.config.learned_edge_length <= 0 or self.config.zero_motion_seconds <= 0
                 or self.config.zero_motion_pixels <= 0 or not math.isfinite(self.config.precision_click_max)
                 or self.config.precision_click_max <= 0 or not math.isfinite(self.config.near_waypoint_distance)
-                or self.config.near_waypoint_distance <= 0 or self.config.road_retry_attempts < 1):
+                or self.config.near_waypoint_distance <= 0 or self.config.road_retry_attempts < 1
+                or self.config.road_sidestep_attempts < 0 or not math.isfinite(self.config.road_sidestep_pixels)
+                or self.config.road_sidestep_pixels <= 0):
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
@@ -566,6 +568,7 @@ class NavigateTo:
         self.last_location = None
         self.zero_point, self.zero_at = None, None
         self.road_disconnects = []
+        self.sidestep_sign = 0
         self.click_mode = ""
         self.road_margin = (cv2.distanceTransform(self.zone.road.astype(np.uint8), cv2.DIST_L2, 5)
                             if self.zone.road is not None else None)
@@ -761,6 +764,43 @@ class NavigateTo:
                     "not a hard wall; retrying <=%.0fpx road clicks", *point, self.config.precision_click_max)
         return False
 
+    def _sidestep(self, point, target, attempt):
+        """A screen-space step past a small prop, toward the road interior.
+
+        Live 2026-11-04 (runs 15 and 17): a broken wagon on the edge of the
+        portal road stalled every short road click, and two stalls learned a
+        6px edge across the whole road. The wagon is about one map pixel wide,
+        below what the minimap can place, so step diagonally or sideways in
+        screen space instead. The second attempt takes the other side.
+        """
+        matrix = np.asarray(self.config.minimap_to_screen, float)
+        forward = matrix@(np.asarray(target, float)-point)
+        norm = float(np.linalg.norm(forward))
+        if norm < 1e-9:
+            return None
+        forward /= norm
+        candidates = []
+        for sign in (1, -1):
+            if attempt > 0 and sign == self.sidestep_sign:
+                continue
+            for degrees in (60, 90):
+                c, s = math.cos(math.radians(degrees*sign)), math.sin(math.radians(degrees*sign))
+                offset = np.array((c*forward[0]-s*forward[1], s*forward[0]+c*forward[1]))*self.config.road_sidestep_pixels
+                delta = np.linalg.solve(matrix, offset)
+                landing = Point(point.x+delta[0], point.y+delta[1])
+                if not self.grid.is_safe(landing) or not self._clear_from(point, landing):
+                    continue
+                x, y = [round(v*self.grid.scale) for v in landing]
+                margin = float(self.road_margin[y, x]) if self.road_margin is not None else 0.0
+                candidates.append((margin, -degrees, sign, delta))
+        for margin, _, sign, delta in sorted(candidates, key=lambda c: c[:2], reverse=True):
+            click = screen_click(Point(*delta), self.config, precise=True,
+                                 max_distance=self.config.road_sidestep_pixels)
+            if click is not None:
+                self.sidestep_sign = sign
+                return click
+        return None
+
     def tick(self, frame, now: float, moving: bool = False) -> NavigationStep:
         if self.last_tick is not None and now < self.last_tick:
             raise ValueError("navigation timestamps must increase")
@@ -859,6 +899,16 @@ class NavigateTo:
                     self.failed = True
                     self.failed_point = point
                     return NavigationStep("stalled", location, waypoints=tuple(self.route))
+                if on_road and attempts < self.config.road_sidestep_attempts:
+                    click = self._sidestep(point, target, attempts)
+                    if click is not None:
+                        self.stalls.append(point)
+                        self.progress_at, self.motion_anchor = now, point
+                        self.zero_point, self.zero_at = None, None
+                        log.warning("navigation: road stall at %.2f,%.2f toward %.2f,%.2f; side-step %d, "
+                                    "no edge learned", point.x, point.y, target.x, target.y, attempts+1)
+                        return NavigationStep("sidestep", location, click, tuple(self.route),
+                                              "road stall: side-step around a small prop")
                 self.stalls.append(point)
                 self.replans += 1
                 blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length,
