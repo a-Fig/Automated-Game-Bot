@@ -1,8 +1,8 @@
 # Offline map navigation
 
 Navigation uses no Roboflow models or game input. `NavigateTo.tick(frame, now)`
-returns a proposal, not an action. No navigation behavior is enabled in the farming
-priority list. Its caller must check focus, health and freshness before dispatching
+returns a proposal, not an action. The bot's optional `travel` behavior uses these
+proposals through the normal guarded input path. Other callers must check focus, health and freshness before dispatching
 any proposal. NumPy frames are **BGR**, PIL images are **RGB**. Positions and all
 path tolerances use minimap-crop pixels, not full-frame or physical world units.
 
@@ -55,6 +55,51 @@ estimated minimap speed; the printed `[navigation]` entries can be copied into
 `albot.toml`. `--calibration` also loads the JSON directly for previews.
 
 ## Task API
+
+For live bot travel, use the existing bot loop rather than a standalone click loop:
+
+```toml
+[behavior]
+travel_goal = "portal:NE" # or "250,180"; empty (the default) disables travel
+```
+
+Copy the measured navigation matrix/speed into `[navigation]` and set
+`calibrated = true` first. Travel follows shield, heal and fight_close, before
+pickup/farm/wander. Old priority lists receive travel after fight_close when a
+goal is enabled; configurations missing/disabled combat priorities are rejected.
+Each tick handles one fresh status frame and rechecks combat before dispatch.
+Arrival logs and clears the goal in memory, sending no further input that tick.
+It does not rewrite the TOML file; clear the file's goal to prevent reuse on restart.
+
+An HP drop greater than 3% within 2 seconds outside an active fight signals an
+attacker. If a mob is detected, shield/threat handling and fight_close engage the
+nearest mob even without a red label or the usual close-range restriction.
+If no mob is detected, retreat takes priority: the bot backtracks actual visited
+journey positions until HP has stopped falling for 4 seconds. Ready boots are
+aimed along the retreat direction and cast once, with a local cooldown guard.
+A later attack within 3 minimap pixels of an earlier attack blocks a radius-3
+area in this journey's private grid; travel replans from the retreat endpoint.
+It keeps backtracking until outside the hazard's inflated clearance as well as
+four seconds of stable HP, so it can replan from an unblocked cell.
+
+Fresh HP below 25% starts a critical retreat, including during combat waits. It
+backtracks and dashes for up to 8 seconds, then quits, even if HP recovers. Very low
+positive HP does not latch the minimum-health death heuristic during this escape;
+zero-health detection remains active. No scene detections are required to retreat
+from fresh status/minimap frames. A detected mob can preempt an ordinary retreat;
+critical retreat takes priority over combat. These guards are off when travel is
+disabled. All thresholds are in `[safety]` and breadcrumb/hazard distances are in
+`[navigation]`.
+
+Only actually visited positions are retreat targets. At the oldest breadcrumb it
+stops further movement and waits for calm/the critical deadline. If travel has not
+yet recorded a route, it logs that no escape direction is known; it cannot invent
+a safe path. Missing/ambiguous minimap fixes or uncalibrated navigation also prevent
+escape clicks. Fresh numeric HUD health is required even with model fallback on;
+missing/stale numeric health cancels movement. The critical deadline still expires
+after 8 seconds if perception is lost, so retreat never runs indefinitely.
+
+The proposal-only API remains available for offline use:
 
 ```python
 import time

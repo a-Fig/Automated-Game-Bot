@@ -79,6 +79,7 @@ class World:
         self.low = False
         self.loading = None
         self.health_fraction = 1.0
+        self.frame = None
         self.clock.on_sleep = self.status
 
     def see(self, predictions=(), obstacles=(), player=True):
@@ -90,7 +91,7 @@ class World:
         self.status()
         return scene
 
-    def status(self, spells=None, low=None, loading="keep", health="keep"):
+    def status(self, spells=None, low=None, loading="keep", health="keep", frame=...):
         if spells is not None:
             self.spells = list(spells)
         if low is not None:
@@ -99,8 +100,10 @@ class World:
             self.loading = loading
         if health != "keep":
             self.health_fraction = health
+        if frame is not ...:
+            self.frame = frame
         self.workers.statuses.publish(Status(self.clock.now(), tuple(self.spells), True, self.low,
-                                            self.loading, self.health_fraction))
+                                            self.loading, self.health_fraction, self.frame))
 
     def tick(self):
         self.brain.tick()

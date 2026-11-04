@@ -104,7 +104,7 @@ class Shield(Behavior):
 
     def plan(self, ctx, scene, status):
         c = ctx.config.combat
-        if scene.threats and status.ready(ctx.slot(c.shield_slot)):
+        if (scene.threats or ctx.under_attack()) and status.ready(ctx.slot(c.shield_slot)):
             return Plan(self.name, "shield up")
         return None
 
@@ -172,7 +172,8 @@ class Fight(Behavior):
     def plan(self, ctx, scene, status):
         if not scene.mobs:
             return None
-        if self.close_only and not scene.is_close(scene.mobs[0].center, ctx.config.detection.close_range):
+        if (self.close_only and not ctx.under_attack()
+                and not scene.is_close(scene.mobs[0].center, ctx.config.detection.close_range)):
             return None
         return pick_target(ctx, scene, scene.mobs, self.name, "attack")
 
@@ -189,6 +190,182 @@ class Fight(Behavior):
                 return True
         ctx.cast(c.fallback)
         return True
+
+
+class Travel(Behavior):
+    """One navigation/retreat step per fresh frame; forward travel yields to combat."""
+    name = "travel"
+
+    def __init__(self):
+        self.task = None
+        self.goal = ""
+        self.timestamp = None
+        self.last_state = ""
+        self.trail: list[Point] = []
+        self.attack_spots: list[Point] = []
+        self.blocked_spots: list[Point] = []
+        self.retreat_episode = None
+        self.retreat_index = -1
+        self.last_dash_at = -math.inf
+
+    def plan(self, ctx, scene, status):
+        goal = ctx.config.behavior.travel_goal
+        if goal:
+            return Plan(self.name, f"travel to {goal}")
+        return None
+
+    def run(self, ctx, plan):
+        ctx.check_safety()
+        goal = ctx.config.behavior.travel_goal
+        if ctx.retreat_required():
+            if goal != self.goal:
+                self._start_task(ctx, goal)
+            return self._retreat(ctx)
+        if ctx.higher_priority_applies(self.name):
+            ctx.stop_travel()
+            return False  # re-select the newly applicable combat behavior this tick
+        if not goal:
+            return True
+        if ctx.under_attack():
+            ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        if goal != self.goal:
+            self._start_task(ctx, goal)
+        status = ctx.status()
+        frame = ctx.frame()
+        if frame is None or status.timestamp == self.timestamp:
+            if frame is None:
+                ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        self.timestamp = status.timestamp
+        step = self.task.tick(frame, ctx.now())
+        # Models/health can publish while path planning runs. Never dispatch a
+        # proposal without rechecking both safety and the higher-priority plans.
+        ctx.check_safety()
+        if ctx.retreat_required():
+            return self._retreat(ctx)
+        if ctx.higher_priority_applies(self.name):
+            ctx.stop_travel()
+            return False
+        if ctx.under_attack():
+            ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        if step.status != self.last_state:
+            log.info("travel %s: %s", step.status, step.message)
+            self.last_state = step.status
+        if step.location is not None:
+            point = step.location.point
+            if not self.trail or point.dist(self.trail[-1]) >= ctx.config.navigation.trail_spacing:
+                self.trail.append(point)
+                self.trail = self.trail[-ctx.config.navigation.trail_limit:]
+        if step.status == "arrived":
+            log.info("travel arrived at %s; clearing goal", goal)
+            ctx.config.behavior.travel_goal = ""
+            ctx.travel_moving = False
+            self.task, self.goal = None, ""
+            return True  # arrival sends no input and does not fall through to farming
+        if step.click is not None and step.status in ("move", "sidestep"):
+            ctx.click(step.click)
+            ctx.travel_moving = True
+            ctx.travel_retreating = False
+        elif step.status != "waiting":
+            ctx.stop_travel()
+        self._wait(ctx)
+        return True
+
+    def _start_task(self, ctx, goal):
+        from .navigation import NavigateTo
+        n = ctx.config.navigation
+        if (n.trail_spacing <= 0 or n.trail_limit < 2 or n.retreat_tolerance <= 0
+                or n.attack_repeat_radius <= 0 or n.attack_block_radius < 1):
+            raise ValueError("invalid travel retreat trail settings")
+        ctx.stop_travel()
+        self.task = NavigateTo(goal, config=n)
+        self.goal, self.timestamp = goal, None
+        self.trail, self.attack_spots, self.blocked_spots = [], [], []
+        self.retreat_episode = None
+
+    def _retreat(self, ctx):
+        from .navigation import screen_click
+        guard, n = ctx.travel_guard, ctx.config.navigation
+        status, frame = ctx.status(), ctx.frame()
+        new_episode = self.retreat_episode != guard.retreat_started
+        if frame is None or not n.calibrated or (status.timestamp == self.timestamp and not new_episode):
+            if frame is None or not n.calibrated:
+                ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        self.timestamp = status.timestamp
+        location = self.task.locator.locate(frame, ctx.now())
+        if location is None:
+            ctx.stop_travel()
+            self._wait(ctx)
+            return True
+        point = location.point
+        if self.retreat_episode != guard.retreat_started:
+            self.retreat_episode = guard.retreat_started
+            self.retreat_index = len(self.trail)-1
+            if any(point.dist(old) <= n.attack_repeat_radius for old in self.attack_spots):
+                self.task.grid.block(point, n.attack_block_radius)
+                self.blocked_spots.append(point)
+                self.blocked_spots = self.blocked_spots[-n.trail_limit:]
+                self.task.route = []
+                log.warning("travel: repeated attack near %.1f,%.1f; blocking radius %d",
+                            point.x, point.y, n.attack_block_radius)
+            self.attack_spots.append(point)
+            self.attack_spots = self.attack_spots[-n.trail_limit:]
+            log.warning("travel retreat: %d recorded locations to backtrack", len(self.trail))
+            if not self.trail:
+                log.error("travel retreat has no recorded route; cannot invent an escape direction")
+        # A dash can pass several breadcrumbs. Only skip to an older point if
+        # the observed player actually reached it; never shortcut across unknown ground.
+        reached = [i for i in range(self.retreat_index+1)
+                   if point.dist(self.trail[i]) <= n.retreat_tolerance]
+        if reached:
+            self.retreat_index = min(reached)-1
+        outside_hazards = all(point.dist(hazard) > n.attack_block_radius+n.clearance+0.5
+                              for hazard in self.blocked_spots)
+        if guard.critical_since is None and guard.calm(ctx.now()) and outside_hazards:
+            ctx.stop_travel()
+            # Discard the portion we just walked backwards, so a later retreat
+            # never targets a more recent breadcrumb back toward the attacker.
+            self.trail = self.trail[:max(0, self.retreat_index+1)]
+            self.trail.append(point)
+            guard.finish_retreat()
+            self.task.route = []  # resume with a new route, retaining hazard blocks
+            self.timestamp = None
+            log.info("travel retreat: HP stable for %.1fs; resuming journey",
+                     ctx.config.safety.retreat_calm_seconds)
+            return True
+        if self.retreat_index < 0:
+            ctx.stop_travel()
+            self._wait(ctx)  # oldest visited point reached (or no recorded route)
+            return True
+        target = self.trail[self.retreat_index]
+        click = screen_click(Point(target.x-point.x, target.y-point.y), n)
+        ctx.check_safety()
+        if ctx.higher_priority_applies(self.name):
+            ctx.stop_travel()
+            return False
+        if click is not None:
+            s = ctx.config.safety
+            slot = ctx.config.combat.leash_slot
+            if ctx.status().ready(ctx.slot(slot)) and ctx.now()-self.last_dash_at >= s.retreat_dash_cooldown:
+                ctx.move_to(click)
+                ctx.press(slot)
+                self.last_dash_at = ctx.now()
+                ctx.resources.clear()
+            ctx.click(click)
+            ctx.travel_moving = ctx.travel_retreating = True
+        self._wait(ctx)
+        return True
+
+    def _wait(self, ctx):
+        ctx.wait(ctx.config.behavior.idle_sleep,
+                 interrupt=lambda: ctx.higher_priority_applies(self.name))
 
 
 class Pickup(Behavior):
@@ -315,7 +492,7 @@ class Wander(Behavior):
 
 
 def default_behaviors() -> dict[str, Behavior]:
-    items = [Shield(), Heal(), Fight("fight_close", True), Pickup(), Farm(),
+    items = [Shield(), Heal(), Fight("fight_close", True), Travel(), Pickup(), Farm(),
              Fight("fight_far", False), Eat(), Wander()]
     return {b.name: b for b in items}
 

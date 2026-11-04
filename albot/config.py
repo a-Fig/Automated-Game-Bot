@@ -96,9 +96,10 @@ class BehaviorConfig:
     # checked in this order every tick; the first that applies runs.
     # this is the order of the if-chain in the original main.py
     priority: list[str] = field(default_factory=lambda: [
-        "shield", "heal", "fight_close", "pickup", "farm", "fight_far", "eat", "wander",
+        "shield", "heal", "fight_close", "travel", "pickup", "farm", "fight_far", "eat", "wander",
     ])
     disabled: list[str] = field(default_factory=list)
+    travel_goal: str = ""  # empty disables travel; otherwise portal:NE or map x,y
     eat_every_minutes: float = 30.0
     eat_wait: float = 2.0
     pickup_wait: float = 2.0
@@ -159,6 +160,14 @@ class SafetyConfig:
     minimum_health_seconds: float = 3.0
     recovery_health: float = 0.1
     recovery_seconds: float = 2.0
+    travel_abort_health: float = 0.25
+    attack_health_drop: float = 0.03
+    attack_window_seconds: float = 2.0
+    attack_hold_seconds: float = 3.0
+    retreat_calm_seconds: float = 4.0
+    critical_retreat_seconds: float = 8.0
+    retreat_drop_epsilon: float = 0.005
+    retreat_dash_cooldown: float = 60.0
 
 
 @dataclass
@@ -189,6 +198,11 @@ class NavigationConfig:
     side_step_seconds: float = 1.0
     stuck_block_radius: int = 3
     max_replans: int = 3
+    trail_spacing: float = 0.5
+    trail_limit: int = 128
+    retreat_tolerance: float = 0.35
+    attack_repeat_radius: float = 3.0
+    attack_block_radius: int = 3
 
 
 @dataclass

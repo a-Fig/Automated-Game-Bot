@@ -19,7 +19,7 @@ from .actuator import FocusLost, MouseFailsafe
 from .behaviors import Behavior, Blacklist, Plan, SystemRandom, danger, default_behaviors
 from .state import Detection, Scene, Status
 from .resources import ResourceMemory
-from .safety import DeathGuard, SafetyStop
+from .safety import DeathGuard, SafetyStop, TravelGuard
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,11 @@ class Context:
         self.blacklist = Blacklist(config, self.clock)
         self.resources = ResourceMemory(config, self.clock)
         self.death_guard = DeathGuard(config)
+        self.travel_guard = TravelGuard(config)
+        self.travel_moving = False
+        self.travel_retreating = False
+        self.active_behavior = ""
+        self.behaviors = []
         self.quit = threading.Event()
         self.bored = 0
         self.last_ate = self.clock.now()
@@ -60,7 +65,47 @@ class Context:
         return self.workers.statuses.get()
 
     def danger(self, count_low_health: bool = True) -> bool:
-        return danger(self.scene(), self.status(), self.config, count_low_health)
+        return self.under_attack() or danger(self.scene(), self.status(), self.config, count_low_health)
+
+    def under_attack(self) -> bool:
+        return self.travel_guard.under_attack(self.now())
+
+    def travel_enabled(self) -> bool:
+        return bool(self.config.behavior.travel_goal) and any(b.name == "travel" for b in self.behaviors)
+
+    def higher_priority_applies(self, name: str) -> bool:
+        scene, status = self.scene(), self.status()
+        if name == "travel" and self.retreat_required(scene):
+            return False
+        for behavior in self.behaviors:
+            if behavior.name == name:
+                break
+            if behavior.plan(self, scene, status) is not None:
+                return True
+        return False
+
+    def retreat_required(self, scene=None) -> bool:
+        guard = self.travel_guard
+        scene = scene if scene is not None else self.scene()
+        unseen = (scene is None or self.now()-scene.timestamp > self.config.perception.stale_after
+                  or not scene.mobs)
+        return (guard.critical_since is not None
+                or (guard.retreat_started is not None and unseen))
+
+    def frame(self):
+        """Use the health worker's capture, so navigation does not grab its own frames."""
+        status = self.status()
+        return status.frame if status is not None else None
+
+    def stop_travel(self) -> None:
+        if self.travel_moving:
+            # Called after safety checks (also from check_safety itself): do not
+            # recurse through ctx.press. Input still enforces window focus.
+            self.input.press(self.config.keys.stop)
+            self.travel_moving = False
+            self.travel_retreating = False
+            if self.scene() is not None:
+                self.resources.move(self.scene(), None)
 
     def slot(self, key: str) -> int:
         return self.config.keys.slots.index(key)
@@ -73,6 +118,12 @@ class Context:
         if self.quit.is_set():
             raise SafetyStop()
         status = self.status()
+        if (self.travel_guard.critical_since is not None and status is not None
+                and status.health_fraction is not None
+                and status.health_fraction > self.config.safety.zero_health):
+            # Very low positive HP can still be alive during the bounded escape.
+            # Keep immediate zero-health detection, without latching the minimum hold.
+            self.death_guard.minimum_since = None
         if self.death_guard.observe(status, self.now()):
             count = len(self.death_guard.deaths)
             if count >= self.config.safety.death_limit:
@@ -84,11 +135,28 @@ class Context:
                       "; quitting" if self.quit.is_set() else "; waiting for recovery")
             if self.saver is not None:
                 self.saver.death(status.health_fraction, status.frame)
+        travelling = self.travel_enabled()
+        guard = self.travel_guard
+        if travelling and guard.abort(status, self.now()):
+            if guard.critical_since is None:
+                log.error("health %.3f below %.3f: retreating for up to %.1fs before quitting",
+                          status.health_fraction, self.config.safety.travel_abort_health,
+                          self.config.safety.critical_retreat_seconds)
+            guard.start_retreat(self.now(), critical=True)
+        if travelling and self.travel_guard.retreat_expired(self.now()):
+            self.quit.set()
+            log.error("critical travel retreat finished after %.1fs; quitting",
+                      self.config.safety.critical_retreat_seconds)
+            if not self.death_guard.dead:
+                self.stop_travel()
+            raise SafetyStop()
         reason = ""
         if self.death_guard.unsafe:
             reason = "death detected; waiting for sustained health recovery"
         elif status is None or self.now() - status.timestamp > self.config.perception.stale_after:
             reason = "health status missing or stale"
+        elif travelling and not self.travel_guard.valid(status, self.now()):
+            reason = "travel requires readable numeric HUD health; model fallback is insufficient"
         elif status.health_fraction is None and not self.config.health.model_fallback:
             reason = "HUD health unreadable; recalibrate [health] or explicitly enable model_fallback"
         if reason != self._safety_reason:
@@ -98,7 +166,21 @@ class Context:
                 log.warning("health readable; input resumed")
             self._safety_reason = reason
         if reason:
+            if travelling and not self.death_guard.dead:
+                self.stop_travel()
             raise SafetyStop()
+        if self.travel_guard.observe(status, self.now(), travelling,
+                                     self.active_behavior in ("fight_close", "fight_far")):
+            log.warning("under attack while travelling: HP fell more than %.0f%% within %.1fs",
+                        self.config.safety.attack_health_drop*100, self.config.safety.attack_window_seconds)
+        scene = self.scene()
+        if travelling and self.under_attack() and (scene is None or not scene.mobs
+                or self.now()-scene.timestamp > self.config.perception.stale_after):
+            guard.start_retreat(self.now())
+        if (self.under_attack() or self.retreat_required()) and not self.travel_retreating:
+            self.stop_travel()
+        if self.retreat_required() and self.active_behavior not in ("", "travel"):
+            raise SafetyStop()  # unwind a cast/heal wait; the next tick dispatches retreat
 
     def wait(self, seconds: float, interrupt: Optional[Callable[[], bool]] = None) -> bool:
         """Wait, checking focus throughout. False if `interrupt` fired first."""
@@ -148,7 +230,8 @@ class Context:
     def click(self, point) -> None:
         self.check_safety()
         self.input.click(point)
-        self.resources.move(self.scene(), point)
+        if self.scene() is not None:
+            self.resources.move(self.scene(), point)
 
     def walk_to(self, point) -> None:
         self.check_safety()
@@ -189,7 +272,18 @@ class Brain:
         unknown = [n for n in b.priority if n not in all_behaviors]
         if unknown:
             raise ValueError(f"unknown behaviors in priority list: {unknown}")
-        self.behaviors = [all_behaviors[n] for n in b.priority if n not in b.disabled]
+        priority = list(b.priority)
+        if b.travel_goal and "travel" not in priority and "travel" not in b.disabled:
+            # Existing albot.toml files predate travel. Insert it without requiring
+            # users to copy the new example priority list.
+            priority.insert(priority.index("fight_close")+1 if "fight_close" in priority else 0, "travel")
+        self.behaviors = [all_behaviors[n] for n in priority if n not in b.disabled]
+        if b.travel_goal and "travel" not in b.disabled:
+            names = [behavior.name for behavior in self.behaviors]
+            if any(n not in names or names.index(n) > names.index("travel")
+                   for n in ("shield", "heal", "fight_close")):
+                raise ValueError("travel requires shield, heal and fight_close ahead of it in priority")
+        ctx.behaviors = self.behaviors
         self.counts: Counter[str] = Counter()
         self.failures: Counter[str] = Counter()
         self.errors = 0
@@ -223,6 +317,12 @@ class Brain:
 
     # deciding ------------------------------------------------------------------
     def choose(self, scene: Scene, status: Status, skip: tuple[str, ...] = ()) -> Optional[tuple[Behavior, Plan]]:
+        if self.ctx.retreat_required(scene) and "travel" not in skip:
+            for behavior in self.behaviors:
+                if behavior.name == "travel":
+                    plan = behavior.plan(self.ctx, scene, status)
+                    if plan is not None:
+                        return behavior, plan
         for behavior in self.behaviors:
             if behavior.name in skip:
                 continue
@@ -242,14 +342,15 @@ class Brain:
         ctx = self.ctx
         ctx.check_safety()
         scene, status = ctx.scene(), ctx.status()
-        if scene is None or status is None or ctx.now() - scene.timestamp > self.config.perception.stale_after:
+        retreat = ctx.retreat_required(scene)
+        if not retreat and (scene is None or status is None or ctx.now() - scene.timestamp > self.config.perception.stale_after):
             ctx.wait_for_new_scene(timeout=0.5)
             return
 
         if ctx.saver is not None:
             ctx.saver.maybe("main", self.config.data.sample_main)
 
-        if scene.is_empty():
+        if not retreat and scene.is_empty():
             self._handle_nothing_detected()
             return
         self._empty_since = None
@@ -264,7 +365,13 @@ class Brain:
             behavior, plan = choice
             ctx.current_plan = plan
             log.info("%-11s %s", behavior.name.upper(), plan.description)
-            ok = behavior.run(ctx, plan)
+            if behavior.name != "travel":
+                ctx.stop_travel()
+            ctx.active_behavior = behavior.name
+            try:
+                ok = behavior.run(ctx, plan)
+            finally:
+                ctx.active_behavior = ""
             if ok:
                 self.counts[behavior.name] += 1
                 if getattr(behavior, "resets_boredom", True):

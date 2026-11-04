@@ -1,11 +1,95 @@
-"""Death episodes: count once, and require sustained recovery before re-arming."""
+"""Death episodes and journey damage/retreat guards, driven by fresh HUD readings."""
 from __future__ import annotations
 
 import math
+from collections import deque
 
 
 class SafetyStop(Exception):
-    """Unwind the current behavior without sending another input."""
+    """Unwind a behavior when safety suspends it or hands control to retreat."""
+
+
+class TravelGuard:
+    """Fresh HP drops outside active fights signal an attacker during a journey."""
+    def __init__(self, config) -> None:
+        self.s = config.safety
+        self.stale_after = config.perception.stale_after
+        if (not 0 < self.s.travel_abort_health < 1 or not 0 < self.s.attack_health_drop < 1
+                or self.s.attack_window_seconds <= 0 or self.s.attack_hold_seconds <= 0
+                or self.s.retreat_calm_seconds <= 0 or self.s.critical_retreat_seconds <= 0
+                or not 0 <= self.s.retreat_drop_epsilon < 1 or self.s.retreat_dash_cooldown < 0):
+            raise ValueError("invalid travel safety settings")
+        self.samples = deque()
+        self.last_timestamp = None
+        self.until = 0.0
+        self.last_hp = None
+        self.last_drop_at = 0.0
+        self.retreat_started = None
+        self.critical_since = None
+
+    def under_attack(self, now: float) -> bool:
+        return now < self.until
+
+    def valid(self, status, now: float) -> bool:
+        return (status is not None and 0 <= now-status.timestamp <= self.stale_after
+                and status.health_fraction is not None and math.isfinite(status.health_fraction)
+                and 0 <= status.health_fraction <= 1)
+
+    def abort(self, status, now: float) -> bool:
+        return self.valid(status, now) and status.health_fraction < self.s.travel_abort_health
+
+    def start_retreat(self, now: float, critical: bool = False) -> None:
+        if self.retreat_started is None:
+            self.retreat_started = now
+            self.last_drop_at = now
+        if critical and self.critical_since is None:
+            self.critical_since = now
+
+    def retreat_expired(self, now: float) -> bool:
+        return self.critical_since is not None and now-self.critical_since >= self.s.critical_retreat_seconds
+
+    def calm(self, now: float) -> bool:
+        return now-self.last_drop_at >= self.s.retreat_calm_seconds
+
+    def finish_retreat(self) -> None:
+        self.retreat_started = self.critical_since = None
+        self.samples.clear()
+        if self.last_timestamp is not None and self.last_hp is not None:
+            self.samples.append((self.last_timestamp, self.last_hp))
+        self.until = 0.0
+
+    def observe(self, status, now: float, enabled: bool, fighting: bool) -> bool:
+        if not enabled:
+            self.samples.clear()
+            self.last_timestamp, self.until = None, 0.0
+            self.last_hp = None
+            self.retreat_started = self.critical_since = None
+            return False
+        if not self.valid(status, now):
+            self.samples.clear()
+            return False
+        if self.last_timestamp is not None and status.timestamp > self.last_timestamp:
+            if self.last_hp is not None and self.last_hp-status.health_fraction > self.s.retreat_drop_epsilon:
+                self.last_drop_at = now
+        if self.last_timestamp is None or status.timestamp > self.last_timestamp:
+            self.last_hp = status.health_fraction
+        if fighting:
+            self.samples.clear()  # damage during a fight is expected, not a new travel incident
+            self.samples.append((status.timestamp, status.health_fraction))
+            self.last_timestamp = status.timestamp
+            return False
+        if self.last_timestamp is not None and status.timestamp <= self.last_timestamp:
+            return False
+        self.last_timestamp = status.timestamp
+        while self.samples and status.timestamp-self.samples[0][0] > self.s.attack_window_seconds:
+            self.samples.popleft()
+        drop = max((hp-status.health_fraction for _, hp in self.samples), default=0.0)
+        self.samples.append((status.timestamp, status.health_fraction))
+        if drop > self.s.attack_health_drop + 1e-9:
+            new = not self.under_attack(now)
+            self.until = now+self.s.attack_hold_seconds
+            return new
+        return False
 
 
 class DeathGuard:

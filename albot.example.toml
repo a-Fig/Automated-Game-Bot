@@ -63,8 +63,12 @@ heal_settle = 5.0
 
 [behavior]
 # checked in this order every tick; the first that has something to do runs
-priority = ["shield", "heal", "fight_close", "pickup", "farm", "fight_far", "eat", "wander"]
+priority = ["shield", "heal", "fight_close", "travel", "pickup", "farm", "fight_far", "eat", "wander"]
 disabled = []              # e.g. ["farm"] to only fight
+travel_goal = ""           # empty = off; e.g. "portal:NE" or "250,180" (minimap pixels)
+# Travel needs navigation.calibrated=true and yields to shield/heal/fight_close.
+# Critical HP or an unseen attacker activates retreat before ordinary combat plans.
+# Arrival clears this value in memory only; restart reuses the file's goal.
 eat_every_minutes = 30.0
 eat_wait = 2.0
 pickup_wait = 2.0
@@ -120,6 +124,14 @@ minimum_health = 0.05      # also count a death if health stays this low...
 minimum_health_seconds = 3.0  # ...for this many seconds of fresh readings
 recovery_health = 0.1      # re-arm only after health is at least this high...
 recovery_seconds = 2.0     # ...continuously this long; no automatic respawn input
+travel_abort_health = 0.25 # below this HP, retreat first, then quit after critical_retreat_seconds
+attack_health_drop = 0.03  # unexpected HP drop larger than this fraction...
+attack_window_seconds = 2.0 # ...within this window signals an attacker during travel
+attack_hold_seconds = 3.0  # threat signal lifetime; active fights don't trigger a new signal
+retreat_calm_seconds = 4.0 # unknown attacker: backtrack until no HP drops for this long
+critical_retreat_seconds = 8.0 # critical HP: bounded retreat, then quit even if HP recovers
+retreat_drop_epsilon = 0.005 # ignore smaller single-reading HP jitter when checking calm
+retreat_dash_cooldown = 60.0 # extra local guard against recasting stale "up" boots detections
 # Death records and exact triggering frames go to data.folder/deaths/.
 
 [navigation]
@@ -149,6 +161,11 @@ progress_pixels = 0.8          # ignore subpixel arrow jitter
 side_step_seconds = 1.0        # one perpendicular click, then replan
 stuck_block_radius = 3         # block intended stuck point in this task's private mask
 max_replans = 3                # then stop proposing clicks, rather than loop forever
+trail_spacing = 0.5            # minimap pixels between observed journey breadcrumbs
+trail_limit = 128              # keep this many actual visited positions for retreat
+retreat_tolerance = 0.35       # a breadcrumb is reached within this minimap radius
+attack_repeat_radius = 3.0     # a new attack this close to an earlier one marks a hazard
+attack_block_radius = 3        # hazard radius in this journey's private grid
 
 [data]
 folder = "training_data"
