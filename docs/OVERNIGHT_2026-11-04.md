@@ -43,6 +43,9 @@ calibration (`calibrated = true`, `minimap_to_screen = [[373.34, 274.96], [-59.9
 | 04:14 | Travel left-clicked a rock and gathered "Rough Stone" | Travel walks with right-click now (eacb3e3). |
 | 05:44 | Farming bot wandered through Fractured Ground's NW exit into Vixen Tor (tier IV) and farmed there ~6 min; travel run 10 (05:50) then planned on the wrong zone's map | Stopped at 05:54, walked back by hand (ford, road, gate) and re-entered Fractured Ground at 07:02, HP full. Zone guard (label-change safety stop + exit no-go discs) requested from sol. |
 | 05:4x | New model called meadow lavender/wildflowers "fiber", so farming in Vixen Tor kept failing with "no gathering bar" | Labelling prompt fixed and meadow look-alikes added to the reference sheet (b193ded); dataset v2 relabelled. |
+| 07:07-07:50 | Client logged out while the character stood idle; first login attempt got "Failed to connect" | Logged back in at ~07:56, closed an Activities popup with its X. |
+| 08:04 | Zone guard false stop | My label rect covered world pixels; the zone-name-only rect separates FG (diff 0.0) from Vixen Tor (22.7). Fixed in b5292c4. |
+| ~09:22-10:09 | In-game minimap hidden (a bot click hit its toggle button); no map fix, so the exit check was blind | Restored by clicking the toggle. HUD click guard + auto-restore requested from sol. While I paused the bot to inspect, a bandit took HP to 56%; the bot healed back to 99% within 12 s after resuming. |
 
 ## The image model
 
@@ -53,7 +56,13 @@ calibration (`calibrated = true`, `minimap_to_screen = [[373.34, 274.96], [-59.9
   `tools/dataset/autolabel.py` (old detector + Meta `muse-spark-1.3-contributor` tiles + crop checks
   against reference crops in `tools/dataset/refs/`). Cost $4.57.
 - Weakest calls: fiber vs fiber_depleted, mob vs hide. "red" was dropped (its labels were wrong).
-- A second batch of 590 frames from a later session is labelling now for version 2.
+- **Version 2 (`albion-v2/2`, live since 09:45):** 709 more frames (590 from a later session + 119 Vixen Tor meadow
+  frames as look-alike negatives), $4.24. Dataset version 2 = 2,559 images. On 80 held-out frames at conf 0.4:
+  fiber precision 0.90 vs 0.74 (7 vs 23 false hits), hide precision 0.80 vs 0.00, player recall 0.92 vs 0.90.
+  Mob is weak in both (most mob scores are 0.2-0.5). Thresholds now fiber 0.6, hide 0.5.
+- Live gathering failure rate: v1 36% (117/323 in run 12), v2 31% (27/87 in the first 15 min of run 13).
+  Remaining failures are mostly hide: the bot keeps returning to corpses that never give a bar (likely a tier it
+  can't skin). Escalating blacklist requested from sol.
 
 ## Navigation (with sol, the GPT-6.1 T3 thread)
 
@@ -82,8 +91,8 @@ calibration (`calibrated = true`, `minimap_to_screen = [[373.34, 274.96], [-59.9
 ## Spend
 
 - Silver: 0. Gold: 0.
-- Meta API: about $8 (two labelling batches).
-- Roboflow: one YOLOv11s training (fast) in `albiondetector`.
+- Meta API: about $12.5 (three labelling runs).
+- Roboflow: two YOLOv11s trainings (fast) in `albiondetector`.
 - Modal: $0.
 
 ## Left running / not restarted
