@@ -230,17 +230,23 @@ def main(argv=None) -> int:
     calibrate.add_argument("--execute", action="store_true", help="allow one live calibration click")
     calibrate.add_argument("--samples", nargs="+", help="solve saved probe JSON files, no input")
     calibrate.add_argument("--out", required=True, help="output sample or calibration JSON")
+    hold = sub.add_parser("travel-hold", help="walk by holding the move button with the zone map open")
+    hold.add_argument("--to", required=True, help="portal:NE or minimap x,y")
+    hold.add_argument("--seconds", type=float, default=90, help="time limit")
+    hold.add_argument("--execute", action="store_true", help="send input; without it, print the route only")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.config)
     setup_logging(cfg)
     if not os.path.exists(args.config):
         log.info("no %s found, using defaults (copy albot.example.toml to change them)", args.config)
-    if args.command in ("nav", "nav-calibrate", "nav-edges"):
+    if args.command in ("nav", "nav-calibrate", "nav-edges", "travel-hold"):
+        from .hold_travel_cli import cmd_travel_hold
         from .navigation_cli import cmd_calibrate, cmd_nav
         from .navigation_edges_cli import cmd_edges
         try:
-            return {"nav": cmd_nav, "nav-calibrate": cmd_calibrate, "nav-edges": cmd_edges}[args.command](cfg, args)
+            return {"nav": cmd_nav, "nav-calibrate": cmd_calibrate, "nav-edges": cmd_edges,
+                    "travel-hold": cmd_travel_hold}[args.command](cfg, args)
         except (ValueError, OSError) as e:
             log.error("%s", e)
             return 1

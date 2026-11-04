@@ -61,6 +61,7 @@ class KeyConfig:
     attack_after_click: str = "space"
     # mouse button that walks the character (wander used right click)
     move_button: str = "right"
+    zone_map: str = "tab"  # opens the zone map; hold-and-steer travel reads the player arrow on it
     # bot control hotkeys, global
     pause: str = "f8"
     quit: str = "f9"

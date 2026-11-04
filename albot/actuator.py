@@ -97,6 +97,45 @@ class Input:
         except pyautogui.FailSafeException as e:
             raise MouseFailsafe() from e
 
+    def hold_move(self, p: Point) -> None:
+        """Press the move button at p and keep it held (hold-and-steer travel)."""
+        self._check_focus()
+        self._check_world(p)
+        import pyautogui
+        try:
+            pyautogui.moveTo(*self._to_screen(p))
+            pyautogui.mouseDown(button=self.keys.move_button)
+        except pyautogui.FailSafeException as e:
+            raise MouseFailsafe() from e
+
+    def steer(self, p: Point) -> None:
+        """Move the cursor toward p with relative input during a hold.
+
+        The game ignores SetCursorPos while the button is held (tested live on
+        2026-11-04); relative mouse_event moves steer. Reading the cursor back
+        corrects for pointer acceleration.
+        """
+        self._check_focus()
+        self._check_world(p)
+        import ctypes
+        import ctypes.wintypes as wintypes
+        x, y = self._to_screen(p)
+        user32 = ctypes.windll.user32
+        for _ in range(3):
+            cursor = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(cursor))
+            dx, dy = x-cursor.x, y-cursor.y
+            if abs(dx) <= 3 and abs(dy) <= 3:
+                return
+            steps = max(1, int(max(abs(dx), abs(dy))//40))
+            for _ in range(steps):
+                user32.mouse_event(0x0001, int(round(dx/steps)), int(round(dy/steps)), 0, 0)
+
+    def release_move(self) -> None:
+        """Release a held move button; works after focus loss too."""
+        import pyautogui
+        pyautogui.mouseUp(button=self.keys.move_button)
+
     def move_to(self, p: Point) -> None:
         """Aim a directional spell without clicking or stopping movement."""
         self._check_focus()
@@ -131,6 +170,16 @@ class DryRunInput:
     def walk_to(self, p: Point) -> None:
         self.actions.append(("walk", round(p.x), round(p.y)))
         log.info("[dry run] walk to %d,%d", p.x, p.y)
+
+    def hold_move(self, p: Point) -> None:
+        self.actions.append(("hold", round(p.x), round(p.y)))
+        log.info("[dry run] hold move at %d,%d", p.x, p.y)
+
+    def steer(self, p: Point) -> None:
+        self.actions.append(("steer", round(p.x), round(p.y)))
+
+    def release_move(self) -> None:
+        self.actions.append(("release_move",))
 
     def move_to(self, p: Point) -> None:
         self.actions.append(("move", round(p.x), round(p.y)))
