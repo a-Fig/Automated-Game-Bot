@@ -53,17 +53,17 @@ REFS_DIR = HERE / "refs"
 # --------------------------------------------------------------------------- prompts
 
 CLASS_GUIDE = """\
-- player: a humanoid PLAYER character (hooded/armoured figure, often with a health bar above it; also when crouching to gather or partly hidden by text). Include the player at the centre of the screen and any others.
-- mob: a LIVING creature that is standing, walking, running or fighting: antelope/deer/stag, the Moabird (a big flightless bird), wolf, boar, undead, bandit, monster. Dark or hard-to-see animals that are upright/moving are still mob. A selected mob has a red ring under it: the ring is part of the mob, not a separate object.
+- player: a real PLAYER character: the hooded/armoured figure at the centre of the screen (often with a yellow/blue bar above it; also when crouching to gather or partly hidden by text), and other players, who carry weapons but NO crate or bundle on their back.
+- mob: a LIVING hostile creature or NPC that is standing, walking, running or fighting: antelope/deer/stag, the Moabird (a big flightless bird with a long pale neck and brown body, standing upright), wolf, boar, undead, monster, and HUMANOID NPC BANDITS (poachers, cutthroats) who carry a big wooden crate, barrel or bundle on their back and often swing an axe. Those bandits are mob, NOT player. Dark, small or partly hidden creatures (behind trees, at the screen edge) are still mob. A selected mob has a red ring under it: the ring is part of the mob, not a separate object.
 - hide: a FRESH animal CORPSE lying motionless on its side on the ground, fur or feathers still intact, no health bar. It can be skinned. It is NOT standing or moving.
 - fiber: a harvestable fiber plant with flowers or puffs on it. Cotton: low plant with WHITE or PINK puffs. Flax (green oasis areas, often at night): a small dark-green leafy plant carrying 2-4 ROUND pale-blue or white blossoms about the size of cotton puffs. Each fiber plant stands alone, about knee high.
-- fiber_depleted: the same fiber plants (cotton or flax) but with bare purple/brown/blue stems and NO flowers or puffs (already harvested).
+- fiber_depleted: an already harvested fiber plant: a small bush of thin dark-brown stems with a few sparse TEAL-GREEN diamond-shaped leaves and NO white/pink puffs or blue flowers. The leaves are a saturated TEAL / blue-green, the same colour as live cotton leaves. Small dull OLIVE or YELLOW-GREEN leafy weeds on the sand are scenery, not fiber_depleted (answer none).
 - red: a red/orange telegraph ring or AoE circle drawn flat on the ground (an enemy ability warning). NOT the thin selection ring right under a single targeted creature.
 - silver: a dropped loot bag, silver pouch or pile of coins lying on the ground. A yellow sparkle or glint alone is NOT silver."""
 
 NEGATIVES = """\
 Label NOTHING (answer none) for: the bare white SKELETON or bones left after an animal is skinned or long dead (not hide); \
-the big leafy yellow-green desert bushes with spiky fronds and the agave-like rosette plants (scenery, not fiber); rocks, boulders, trees, \
+small olive/yellow-green leafy weeds on the sand; the big leafy yellow-green desert bushes with spiky fronds and the agave-like rosette plants (scenery, not fiber); rocks, boulders, trees, \
 cliffs and paving; GREEN MEADOW wildflowers: purple/blue lavender spikes, flowering shrubs and bushes with many small purple or blue flowers, clumps of tiny blue, pink, orange or yellow ground flowers in the grass (scenery, not fiber); HUD/UI, floating text, health bars, icons; buildings, market stalls; NPC vendors (a person sitting at a desk/stall with \
 books or a lantern); shadows, grass, empty sand."""
 
@@ -83,7 +83,7 @@ Which class is it? Choose exactly one:
 - none: none of the above.
 
 {NEGATIVES}
-Key distinctions: standing/walking/fighting animal = mob; animal lying on its side with intact fur or feathers = hide; bare white bones = none. Plant with flowers/puffs = fiber; same plant bare = fiber_depleted.
+Key distinctions: humanoid with a crate/bundle on its back = mob (bandit), not player; standing/walking/fighting animal = mob; animal lying on its side with intact fur or feathers = hide; bare white bones = none. Plant with white/pink puffs or round blossoms = fiber; small bush with teal leaves and no puffs = fiber_depleted.
 Also give a TIGHT box around just that object, in pixel coordinates of THIS crop image (it may be smaller or shifted from the magenta rectangle; exclude shadows, health bars and selection rings). Use [] when the label is none.
 Answer with ONLY a JSON object: {{"seen": "<what is really inside the rectangle, max 12 words; say 'empty sand' or 'shadow' if that is all>", "label": "<class or none>", "box": [x1, y1, x2, y2]}}"""
 
