@@ -60,7 +60,8 @@ def pick_target(ctx, scene: Scene, items: Sequence[Detection], behavior: str, ve
     that a single detour waypoint can reach. Spots the bot keeps failing at are
     skipped for a while (see Blacklist).
     """
-    candidates = [d for d in items if not ctx.blacklist.blocked(d.center)]
+    candidates = [d for d in items if not ctx.blacklist.blocked(d.center)
+                  and (behavior != "farm" or not ctx.resources.blocked(scene, d))]
     for d in candidates:
         if scene.reachable(d.center):
             return Plan(behavior, f"{verb} {d.class_name}", target=d)
@@ -76,7 +77,7 @@ def pick_target(ctx, scene: Scene, items: Sequence[Detection], behavior: str, ve
 def walk_detour(ctx, plan: Plan) -> bool:
     """Walk to the waypoint, then hand back so the next tick re-plans from a fresh frame."""
     scene = ctx.scene()
-    ctx.input.walk_to(plan.waypoint)
+    ctx.walk_to(plan.waypoint)
     b = ctx.config.behavior
     walk_time = min(b.max_detour_walk, scene.player.dist(plan.waypoint) / b.walk_speed_px_per_s)
     ctx.wait(walk_time, interrupt=ctx.danger)
@@ -106,7 +107,7 @@ class Shield(Behavior):
 
     def run(self, ctx, plan):
         c = ctx.config.combat
-        ctx.input.press(c.shield_slot)
+        ctx.press(c.shield_slot)
         ctx.wait(c.shield_wait)
         return True
 
@@ -122,9 +123,12 @@ class Heal(Behavior):
 
     def run(self, ctx, plan):
         c = ctx.config.combat
-        ctx.input.press(c.leash_slot)
-        ctx.wait(c.leash_recast_after)
-        ctx.input.press(c.leash_slot)
+        point = self.escape_point(ctx.scene(), ctx.config)
+        if point is None:
+            return False
+        ctx.move_to(point)
+        ctx.press(c.leash_slot)
+        ctx.resources.clear()  # the 16 m dash is not calibrated in screen pixels
 
         # wait for health to come back, unless something attacks. danger() has to
         # ignore low health here, or this wait would end immediately (it did in the original)
@@ -134,6 +138,25 @@ class Heal(Behavior):
         ctx.wait_until(lambda: not ctx.status().low_health, c.heal_max_wait, interrupt=threat)
         ctx.wait(c.heal_settle, interrupt=threat)
         return True
+
+    @staticmethod
+    def escape_point(scene, config) -> Optional[Point]:
+        nearby = [d.center for d in (*scene.mobs, *scene.threats)
+                  if scene.is_close(d.center, config.detection.close_range)]
+        angle = 0.0
+        if nearby:
+            dx = scene.player.x - sum(p.x for p in nearby) / len(nearby)
+            dy = scene.player.y - sum(p.y for p in nearby) / len(nearby)
+            angle = math.atan2(dy, dx)
+        # Try directly away first, then nearby directions if terrain blocks it.
+        for turn in (0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8):
+            a = angle + turn * math.pi / 8
+            p = Point(scene.player.x + math.cos(a) * config.combat.escape_distance,
+                      scene.player.y + math.sin(a) * config.combat.escape_distance)
+            if (0 <= p.x < scene.window_size[0] and 0 <= p.y < scene.window_size[1]
+                    and scene.reachable(p)):
+                return p
+        return None
 
 
 class Fight(Behavior):
@@ -156,8 +179,8 @@ class Fight(Behavior):
         c = ctx.config.combat
         for step in c.openers:
             ctx.cast_if_ready(step)
-        ctx.input.click(plan.target.center)
-        ctx.input.press(ctx.config.keys.attack_after_click)
+        ctx.click(plan.target.center)
+        ctx.press(ctx.config.keys.attack_after_click)
         for step in c.rotation:
             if ctx.cast_if_ready(step):
                 return True
@@ -178,7 +201,7 @@ class Pickup(Behavior):
             return walk_detour(ctx, plan)
         b = ctx.config.behavior
         is_wisp = plan.target.class_name in ctx.config.detection.wisp_classes
-        ctx.input.click(plan.target.center)
+        ctx.click(plan.target.center)
         ctx.wait(b.wisp_wait if is_wisp else b.pickup_wait, interrupt=ctx.danger)
         ctx.check_progress(plan.target)
         return True
@@ -197,7 +220,8 @@ class Farm(Behavior):
         ctx.want_loading_bar(True)
         try:
             clicked_at = ctx.now()
-            ctx.input.click(plan.target.center)
+            spot = ctx.resources.world_point(ctx.scene(), plan.target.center)
+            ctx.click(plan.target.center)
 
             def loading():
                 s = ctx.status()
@@ -207,15 +231,18 @@ class Farm(Behavior):
             if not ctx.wait_until(loading, b.farm_walk_timeout, interrupt=ctx.danger):
                 if ctx.danger():
                     return False
-                # no bar, no danger: walked there and nothing happened. If this
-                # keeps happening at the same spot, the blacklist steps in
-                ctx.blacklist.failure(plan.target.center)
+                # No bar and no danger: remember the original world spot, even
+                # if the camera moved while approaching the depleted node.
+                ctx.resources.failure(plan.target.class_name, spot)
                 return False
-            ctx.blacklist.success(plan.target.center)
+            ctx.resources.move(ctx.scene(), None)  # gathering stopped the approach
 
             # gathering: wait for the bar to go away
-            ctx.wait_until(lambda: not loading(), b.farm_max_seconds, interrupt=ctx.danger)
+            finished = ctx.wait_until(lambda: not loading(), b.farm_max_seconds, interrupt=ctx.danger)
             if ctx.danger():
+                return False
+            if not finished:
+                ctx.resources.failure(plan.target.class_name, spot)
                 return False
             ctx.wait_for_new_scene()
             return True
@@ -232,7 +259,7 @@ class Eat(Behavior):
         return None
 
     def run(self, ctx, plan):
-        ctx.input.press(ctx.config.keys.food)
+        ctx.press(ctx.config.keys.food)
         ctx.last_ate = ctx.now()
         ctx.wait(ctx.config.behavior.eat_wait)
         return True
@@ -271,7 +298,7 @@ class Wander(Behavior):
     def run(self, ctx, plan):
         b = ctx.config.behavior
         for _ in range(b.wander_clicks):
-            ctx.input.walk_to(plan.point)
+            ctx.walk_to(plan.point)
             if not ctx.wait(b.wander_click_interval, interrupt=lambda: activity(ctx.scene())):
                 break
         return True

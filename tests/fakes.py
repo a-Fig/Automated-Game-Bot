@@ -23,6 +23,7 @@ class FakeClock:
     def __init__(self) -> None:
         self.t = 1000.0
         self.events: list[tuple[float, callable]] = []
+        self.on_sleep = None
 
     def now(self) -> float:
         return self.t
@@ -33,6 +34,8 @@ class FakeClock:
         self.events = [e for e in self.events if e[0] > self.t]
         for _, fn in sorted(due, key=lambda e: e[0]):
             fn()
+        if self.on_sleep is not None:
+            self.on_sleep()
 
     def at(self, offset: float, fn) -> None:
         self.events.append((self.t + offset, fn))
@@ -75,6 +78,8 @@ class World:
         self.spells = ["up"] * 6
         self.low = False
         self.loading = None
+        self.health_fraction = 1.0
+        self.clock.on_sleep = self.status
 
     def see(self, predictions=(), obstacles=(), player=True):
         preds = list(predictions)
@@ -85,14 +90,17 @@ class World:
         self.status()
         return scene
 
-    def status(self, spells=None, low=None, loading="keep"):
+    def status(self, spells=None, low=None, loading="keep", health="keep"):
         if spells is not None:
             self.spells = list(spells)
         if low is not None:
             self.low = low
         if loading != "keep":
             self.loading = loading
-        self.workers.statuses.publish(Status(self.clock.now(), tuple(self.spells), True, self.low, self.loading))
+        if health != "keep":
+            self.health_fraction = health
+        self.workers.statuses.publish(Status(self.clock.now(), tuple(self.spells), True, self.low,
+                                            self.loading, self.health_fraction))
 
     def tick(self):
         self.brain.tick()

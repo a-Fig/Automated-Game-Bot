@@ -1,9 +1,8 @@
 """
 All tunable values in one place, loaded from a TOML file.
 
-Every default here matches a value hard-coded in the original bot, so running with
-an empty config file plays the same way the original did. The original value's
-location is noted where it isn't obvious.
+Defaults started with the original bot's values; HUD health and safety settings
+are calibrated separately. Original locations are noted where they aren't obvious.
 """
 from __future__ import annotations
 
@@ -86,7 +85,8 @@ class CombatConfig:
     shield_slot: str = "d"
     shield_wait: float = 2.5
     leash_slot: str = "f"
-    leash_recast_after: float = 3.0
+    leash_recast_after: float = 3.0  # retained for old configs; Ethereal Path has no recast
+    escape_distance: float = 300.0
     heal_max_wait: float = 60.0
     heal_settle: float = 5.0
 
@@ -119,6 +119,8 @@ class BehaviorConfig:
     stuck_repeats: int = 3
     stuck_radius: float = 40.0
     blacklist_seconds: float = 15.0
+    resource_blacklist_seconds: float = 180.0
+    resource_blacklist_radius: float = 60.0
     # detours around obstacles when a target's straight line is blocked
     detours: bool = True
     detour_margin: float = 25.0
@@ -132,6 +134,27 @@ class PerceptionConfig:
     scene_workers: int = 2         # globals.GENERAL_SCAN_PROCESSES used 2 threads
     status_hz: float = 5.0         # spells + health; the original ran roughly 1 to 2 per second
     stale_after: float = 2.0       # a scene older than this pauses decisions
+
+
+@dataclass
+class HealthConfig:
+    # Window-relative pixels; recalibrate both size and rectangles for another HUD scale.
+    window_size: tuple[int, int] = (2240, 1400)
+    bar: tuple[int, int, int, int] = (105, 56, 245, 68)
+    energy_bar: tuple[int, int, int, int] = (105, 72, 245, 80)
+    low_threshold: float = 0.4
+    model_fallback: bool = False
+
+
+@dataclass
+class SafetyConfig:
+    death_limit: int = 2
+    death_window_seconds: float = 1800.0
+    zero_health: float = 0.01
+    minimum_health: float = 0.05
+    minimum_health_seconds: float = 3.0
+    recovery_health: float = 0.1
+    recovery_seconds: float = 2.0
 
 
 @dataclass
@@ -162,6 +185,8 @@ class Config:
     combat: CombatConfig = field(default_factory=CombatConfig)
     behavior: BehaviorConfig = field(default_factory=BehaviorConfig)
     perception: PerceptionConfig = field(default_factory=PerceptionConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
+    safety: SafetyConfig = field(default_factory=SafetyConfig)
     data: DataConfig = field(default_factory=DataConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
 
@@ -187,7 +212,7 @@ def _build(cls, data: dict[str, Any], path: str):
             value = [CastStep(**v) for v in value]
         elif name == "fallback":
             value = CastStep(**value)
-        elif isinstance(value, list) and name == "player_offset":
+        elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar"):
             value = tuple(value)
         kwargs[name] = value
     return cls(**kwargs)

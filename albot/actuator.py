@@ -63,6 +63,15 @@ class Input:
         except pyautogui.FailSafeException as e:
             raise MouseFailsafe() from e
 
+    def move_to(self, p: Point) -> None:
+        """Aim a directional spell without clicking or stopping movement."""
+        self._check_focus()
+        import pyautogui
+        try:
+            pyautogui.moveTo(*self._to_screen(p), duration=0.2)
+        except pyautogui.FailSafeException as e:
+            raise MouseFailsafe() from e
+
 
 @dataclass
 class DryRunInput:
@@ -80,3 +89,7 @@ class DryRunInput:
     def walk_to(self, p: Point) -> None:
         self.actions.append(("walk", round(p.x), round(p.y)))
         log.info("[dry run] walk to %d,%d", p.x, p.y)
+
+    def move_to(self, p: Point) -> None:
+        self.actions.append(("move", round(p.x), round(p.y)))
+        log.info("[dry run] aim at %d,%d", p.x, p.y)

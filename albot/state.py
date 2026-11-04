@@ -3,7 +3,7 @@ What the bot knows about the game at one moment, and a thread-safe holder for
 the newest copy.
 
 A Scene is one screenshot run through the scene and obstacle models. A Status is
-one screenshot run through the spell, health (and sometimes loading bar) models.
+one screenshot read for HUD health, spells and sometimes the loading bar.
 Both are immutable once built, so a behavior holding one can't see it change
 underneath it. Behaviors that want the newest data ask for it again.
 """
@@ -64,6 +64,8 @@ class Status:
     spells_calibrated: bool
     low_health: bool
     loading_bar: Optional[bool] = None   # None when the loading bar model wasn't run
+    health_fraction: Optional[float] = None  # None when the HUD could not be read
+    frame: Optional[object] = field(default=None, compare=False, repr=False)
 
     def ready(self, slot_index: int) -> bool:
         return 0 <= slot_index < len(self.spells) and self.spells[slot_index] == "up"

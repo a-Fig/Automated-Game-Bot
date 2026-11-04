@@ -18,6 +18,8 @@ from typing import Callable, Optional
 from .actuator import FocusLost, MouseFailsafe
 from .behaviors import Behavior, Blacklist, Plan, SystemRandom, danger, default_behaviors
 from .state import Detection, Scene, Status
+from .resources import ResourceMemory
+from .safety import DeathGuard, SafetyStop
 
 log = logging.getLogger(__name__)
 
@@ -42,9 +44,13 @@ class Context:
         self.random = rng or SystemRandom()
         self.saver = saver
         self.blacklist = Blacklist(config, self.clock)
+        self.resources = ResourceMemory(config, self.clock)
+        self.death_guard = DeathGuard(config)
+        self.quit = threading.Event()
         self.bored = 0
         self.last_ate = self.clock.now()
         self.current_plan: Optional[Plan] = None
+        self._safety_reason = ""
 
     # what the bot sees -----------------------------------------------------
     def scene(self) -> Scene:
@@ -63,15 +69,48 @@ class Context:
         return self.clock.now()
 
     # waiting -----------------------------------------------------------------
+    def check_safety(self) -> None:
+        if self.quit.is_set():
+            raise SafetyStop()
+        status = self.status()
+        if self.death_guard.observe(status, self.now()):
+            count = len(self.death_guard.deaths)
+            if count >= self.config.safety.death_limit:
+                self.quit.set()
+            self.resources.clear()
+            log.error("death detected at %s (health %.3f): %d in %.0fs%s",
+                      time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), status.health_fraction,
+                      count, self.config.safety.death_window_seconds,
+                      "; quitting" if self.quit.is_set() else "; waiting for recovery")
+            if self.saver is not None:
+                self.saver.death(status.health_fraction, status.frame)
+        reason = ""
+        if self.death_guard.unsafe:
+            reason = "death detected; waiting for sustained health recovery"
+        elif status is None or self.now() - status.timestamp > self.config.perception.stale_after:
+            reason = "health status missing or stale"
+        elif status.health_fraction is None and not self.config.health.model_fallback:
+            reason = "HUD health unreadable; recalibrate [health] or explicitly enable model_fallback"
+        if reason != self._safety_reason:
+            if reason:
+                log.warning("input suspended: %s", reason)
+            else:
+                log.warning("health readable; input resumed")
+            self._safety_reason = reason
+        if reason:
+            raise SafetyStop()
+
     def wait(self, seconds: float, interrupt: Optional[Callable[[], bool]] = None) -> bool:
         """Wait, checking focus throughout. False if `interrupt` fired first."""
         end = self.clock.now() + seconds
         while self.clock.now() < end:
+            self.check_safety()
             if not self.window.is_active():
                 raise FocusLost()
             if interrupt is not None and interrupt():
                 return False
             self.clock.sleep(0.02)
+        self.check_safety()
         return True
 
     def wait_until(self, condition: Callable[[], bool], timeout: float,
@@ -79,6 +118,7 @@ class Context:
         """True once `condition` holds. False on timeout or interrupt."""
         end = self.clock.now() + timeout
         while self.clock.now() < end:
+            self.check_safety()
             if not self.window.is_active():
                 raise FocusLost()
             if condition():
@@ -86,6 +126,7 @@ class Context:
             if interrupt is not None and interrupt():
                 return False
             self.clock.sleep(0.02)
+        self.check_safety()
         return condition()
 
     def wait_for_new_scene(self, timeout: float = 2.0) -> None:
@@ -96,9 +137,27 @@ class Context:
         (self.workers.want_loading_bar.set if on else self.workers.want_loading_bar.clear)()
 
     # acting --------------------------------------------------------------------
+    def press(self, key) -> None:
+        self.check_safety()
+        self.input.press(key)
+
+    def move_to(self, point) -> None:
+        self.check_safety()
+        self.input.move_to(point)
+
+    def click(self, point) -> None:
+        self.check_safety()
+        self.input.click(point)
+        self.resources.move(self.scene(), point)
+
+    def walk_to(self, point) -> None:
+        self.check_safety()
+        self.input.walk_to(point)
+        self.resources.move(self.scene(), point)
+
     def cast(self, step) -> None:
         for _ in range(step.repeat):
-            self.input.press(step.slot)
+            self.press(step.slot)
             self.wait(step.delay)
 
     def cast_if_ready(self, step) -> bool:
@@ -135,7 +194,7 @@ class Brain:
         self.failures: Counter[str] = Counter()
         self.errors = 0
         self.paused = threading.Event()
-        self.quit = threading.Event()
+        self.quit = ctx.quit
         self.pause_reason = ""
         self._empty_since: Optional[float] = None
         self._pressed_esc = False
@@ -173,7 +232,15 @@ class Brain:
         return None
 
     def tick(self) -> None:
+        try:
+            self._tick()
+        except SafetyStop:
+            self.ctx.current_plan = None
+            self.ctx.clock.sleep(0.1)
+
+    def _tick(self) -> None:
         ctx = self.ctx
+        ctx.check_safety()
         scene, status = ctx.scene(), ctx.status()
         if scene is None or status is None or ctx.now() - scene.timestamp > self.config.perception.stale_after:
             ctx.wait_for_new_scene(timeout=0.5)
@@ -190,6 +257,7 @@ class Brain:
 
         tried: list[str] = []
         while True:
+            ctx.check_safety()
             choice = self.choose(ctx.scene(), ctx.status(), tuple(tried))
             if choice is None:
                 break
@@ -227,7 +295,7 @@ class Brain:
         limit = self.config.behavior.lost_seconds
         if waited >= limit and not self._pressed_esc:
             log.info("nothing detected for %.0fs, pressing %s", waited, self.config.keys.close_menus)
-            ctx.input.press(self.config.keys.close_menus)
+            ctx.press(self.config.keys.close_menus)
             self._pressed_esc = True
         elif waited >= 2 * limit:
             if ctx.saver is not None:

@@ -52,7 +52,7 @@ class Capture:
 
 
 class Models:
-    """Loads the five Roboflow models. Weights download once, then run locally."""
+    """Loads Roboflow models (health only for fallback). Weights are cached locally."""
 
     def __init__(self, config: Config) -> None:
         import inference  # heavy; imported here so tests and --help stay fast
@@ -61,11 +61,44 @@ class Models:
         self.obstacles = inference.get_model(m.obstacles, config.key_for_model("obstacles"))
         self.spells = inference.get_model(m.spells, config.key_for_model("spells"))
         self.loading_bar = inference.get_model(m.loading_bar, config.key_for_model("loading_bar"))
-        self.health = inference.get_model(m.health, config.key_for_model("health"))
+        self.health = (inference.get_model(m.health, config.key_for_model("health"))
+                       if config.health.model_fallback else None)
 
 
 def predict(model: Any, image: Any) -> list:
     return model.infer(image)[0].predictions
+
+
+def read_health(frame: Any, config: Config) -> float | None:
+    """Share of red pixels on the HUD's middle row, ignoring white text."""
+    import numpy as np
+
+    rgb = hasattr(frame, "convert")  # PIL captures are RGB; numpy captures are BGR
+    pixels = np.asarray(frame.convert("RGB") if rgb else frame)
+    h = config.health
+    if pixels.ndim != 3 or pixels.shape[2] < 3 or pixels.shape[1::-1] != h.window_size:
+        return None
+
+    def row(rect):
+        x0, y0, x1, y1 = rect
+        if not (0 <= x0 < x1 <= pixels.shape[1] and 0 <= y0 < y1 <= pixels.shape[0]):
+            return None
+        colors = pixels[(y0 + y1) // 2, x0:x1, :3].astype(float)
+        return colors if rgb else colors[:, ::-1]
+
+    health, energy = row(h.bar), row(h.energy_bar)
+    if health is None or energy is None:
+        return None
+    usable = ~np.all(health >= 200, axis=1)
+    if not usable.any():
+        return None
+    red = (health[:, 0] >= 70) & (health[:, 0] > health[:, 1] * 1.5) & (health[:, 0] > health[:, 2] * 1.5)
+    blue = (energy[:, 2] >= 70) & (energy[:, 2] > energy[:, 0] * 1.5) & (energy[:, 2] > energy[:, 1] * 1.5)
+    # An empty/hidden HUD must not look like death. Blue energy anchors a zero-red
+    # reading; simultaneous empty health and energy needs respawn-screen recognition.
+    if not red.any() and not blue.any():
+        return None
+    return float(np.count_nonzero(red & usable) / np.count_nonzero(usable))
 
 
 def choose_player(predictions: Sequence, config: Config, size: tuple[int, int]) -> tuple[Point, bool]:
@@ -152,12 +185,15 @@ class Perceiver:
 
     def status_from(self, frame: Any, timestamp: float, want_loading_bar: bool) -> Status:
         spells = self.spell_slots.map(predict(self.models.spells, frame))
-        health = predict(self.models.health, frame)
-        low = bool(health) and health[0].class_name == "low"
+        fraction = read_health(frame, self.config)
+        low = fraction <= self.config.health.low_threshold if fraction is not None else True
+        if fraction is None and self.config.health.model_fallback:
+            health = predict(self.models.health, frame)
+            low = not health or health[0].class_name == "low"
         loading = None
         if want_loading_bar:
             loading = len(predict(self.models.loading_bar, frame)) > 0
-        return Status(timestamp, spells, self.spell_slots.calibrated, low, loading)
+        return Status(timestamp, spells, self.spell_slots.calibrated, low, loading, fraction, frame)
 
     def grab(self) -> tuple[Any, tuple[int, int], float, float]:
         rect = self.window.rect()

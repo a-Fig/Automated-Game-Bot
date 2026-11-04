@@ -1,6 +1,5 @@
 # albot settings. Copy to albot.toml and change what you need; anything left out
-# uses the default shown here. Every default matches the original bot's
-# hard-coded values. A misspelled setting name is an error at startup, not
+# uses the default shown here. A misspelled setting name is an error at startup, not
 # silently ignored.
 
 window_title = "Albion Online Client"
@@ -57,7 +56,8 @@ fallback = { slot = "q", delay = 0.5 }
 shield_slot = "d"
 shield_wait = 2.5
 leash_slot = "f"
-leash_recast_after = 3.0
+leash_recast_after = 3.0    # legacy setting; ignored (Ethereal Path is a single dash)
+escape_distance = 300.0    # cursor distance from the player, aimed away from nearby danger
 heal_max_wait = 60.0
 heal_settle = 5.0
 
@@ -81,6 +81,8 @@ lost_seconds = 3.0         # nothing detected: esc after this, pause after twice
 stuck_repeats = 3          # failing at one spot this many times in a row...
 stuck_radius = 40.0
 blacklist_seconds = 15.0   # ...skips it for this long
+resource_blacklist_seconds = 180.0  # one failed gather skips that approximate world spot
+resource_blacklist_radius = 60.0    # pixel tolerance for movement-estimation drift
 detours = true             # path around obstacles instead of skipping blocked targets
 detour_margin = 25.0
 walk_speed_px_per_s = 250.0   # a guess; tune by watching a detour walk
@@ -91,6 +93,28 @@ capture_backend = "mss"    # "pyautogui" is slower; it's what the original used
 scene_workers = 2
 status_hz = 5.0
 stale_after = 2.0
+
+[health]
+# Window-relative HUD pixels, calibrated ONLY at 2240x1400 and the current UI scale.
+# Recalibrate these rectangles AND window_size for other sizes/scales; no auto-scaling.
+# Rectangles are [left, top, right, bottom], right/bottom exclusive.
+window_size = [2240, 1400]
+bar = [105, 56, 245, 68]
+energy_bar = [105, 72, 245, 80]  # blue pixels distinguish zero health from a hidden HUD
+low_threshold = 0.4
+model_fallback = false     # use low_detector only when HUD unreadable; cannot detect death
+# Without fallback, missing/unreadable HUD health suspends all actions until readable.
+# If both bars are empty, health is unknown, not zero; respawn recognition is still needed.
+
+[safety]
+death_limit = 2            # quit after this many distinct deaths in the rolling window
+death_window_seconds = 1800.0
+zero_health = 0.01         # immediately treat a readable near-empty health bar as death
+minimum_health = 0.05      # also count a death if health stays this low...
+minimum_health_seconds = 3.0  # ...for this many seconds of fresh readings
+recovery_health = 0.1      # re-arm only after health is at least this high...
+recovery_seconds = 2.0     # ...continuously this long; no automatic respawn input
+# Death records and exact triggering frames go to data.folder/deaths/.
 
 [data]
 folder = "training_data"

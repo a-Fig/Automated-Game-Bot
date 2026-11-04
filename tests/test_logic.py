@@ -132,8 +132,9 @@ def test_heal_waits_until_health_recovers():
     w.clock.at(12, lambda: w.status(low=False))
     start = w.clock.now()
     actions = w.tick()
-    assert actions[:2] == [("press", "f"), ("press", "f")]
-    # 3s leash recast + waiting for recovery at 12s + 5s settle
+    assert actions[0][0] == "move" and actions[1] == ("press", "f")
+    assert actions.count(("press", "f")) == 1
+    # waiting for recovery at 12s + 5s settle
     assert w.clock.now() - start >= 17
 
 
@@ -161,12 +162,11 @@ def test_blocked_mob_gets_a_detour_walk():
 def test_farm_node_that_never_gathers_gets_blacklisted():
     w = World()
     node = pred("fiber", PLAYER[0] + 150, PLAYER[1] + 50)
-    for _ in range(3):
-        w.see([node])
-        w.tick()
-    assert len(w.ctx.blacklist) == 1
-    w.input.actions.clear()
     w.see([node])
+    w.tick()
+    assert len(w.ctx.resources.failed) == 1
+    w.input.actions.clear()
+    w.see([pred("fiber", *PLAYER)])  # the camera followed the approach to the node
     w.tick()
     assert not any(a[0] == "click" for a in w.input.actions)
 
@@ -194,6 +194,7 @@ def test_nothing_detected_presses_esc_then_pauses():
 
 def test_waits_stop_when_focus_is_lost():
     w = World()
+    w.see([])
     w.clock.at(1, lambda: setattr(w.window, "active", False))
     with pytest.raises(FocusLost):
         w.ctx.wait(5)
@@ -255,6 +256,7 @@ def test_threads_brain_and_workers_run_together():
         loading_bar=model([]), health=model([SimpleNamespace(class_name="high")]),
     )
     cfg = Config()
+    cfg.health.model_fallback = True  # this test uses opaque frames, not HUD pixels
     window = FixedWindow(1000, 800)
     capture = SimpleNamespace(grab=lambda rect: object())
     perceiver = Perceiver(cfg, models, capture, window)
