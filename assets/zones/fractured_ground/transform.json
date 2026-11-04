@@ -1,40 +1,75 @@
 {
   "live_features": {
-    "matches": 627,
-    "inliers": 288,
-    "median_error": 0.5172705946053918,
-    "p95_error": 0.9350017349985542
+    "matches": 1074,
+    "inliers": 447,
+    "median_error": 0.4272837111251351,
+    "p95_error": 0.8283850016586782
   },
   "reference_features": {
-    "matches": 1071,
-    "inliers": 864,
-    "median_error": 0.3259917589188085,
-    "p95_error": 0.713246587640494
+    "matches": 1727,
+    "inliers": 1422,
+    "median_error": 0.29107760815003586,
+    "p95_error": 0.6976690144656836
   },
   "tab_to_reference": [
     [
-      0.22325851196663843,
-      0.0003858459682671559,
-      -39.729635225875604
+      0.22329975221078316,
+      0.0003055612054770689,
+      -39.900968619399116
     ],
     [
-      -0.0003858459682671559,
-      0.22325851196663843,
-      -21.813302035356344
+      -0.0003055612054770689,
+      0.22329975221078316,
+      -22.050936360158637
     ]
   ],
   "reference_to_live": [
     [
-      0.9952562845212428,
-      0.0004240070348580917,
-      0.9371846289283781
+      0.9964499547031307,
+      -0.002649194221802891,
+      1.2233492252347204
     ],
     [
-      -0.0004240070348580916,
-      0.9952562845212428,
-      8.857830941197758
+      0.002649194221802891,
+      0.9964499547031307,
+      7.832658959894124
     ]
   ],
+  "local_registration": {
+    "rect": [
+      235,
+      130,
+      250,
+      145
+    ],
+    "checks": [
+      {
+        "capture": "fg_01.png",
+        "matches": 2,
+        "median_error": 0.9500209975402529,
+        "max_error": 1.0945630601433214
+      },
+      {
+        "capture": "fg_02.png",
+        "matches": 2,
+        "median_error": 0.9322603089772394,
+        "max_error": 1.0599850065711076
+      },
+      {
+        "capture": "fg_03.png",
+        "matches": 5,
+        "median_error": 1.0951532614702764,
+        "max_error": 1.2129777586174495
+      },
+      {
+        "capture": "fg_04.png",
+        "matches": 6,
+        "median_error": 1.1395059384751847,
+        "max_error": 1.2129747716084254
+      }
+    ],
+    "note": "tiny minimap features have about one pixel of sampling uncertainty"
+  },
   "observations": {
     "classifier": {
       "walk_ne_fixes.json": {
@@ -44,17 +79,17 @@
           "boundary": 0,
           "rock": 0,
           "water": 0,
-          "grey": 128
+          "grey": 215
         }
       },
       "visited.json": {
         "samples": 723,
-        "unsafe": 6,
+        "unsafe": 2,
         "near_classes": {
-          "boundary": 9,
+          "boundary": 6,
           "rock": 0,
           "water": 0,
-          "grey": 187
+          "grey": 181
         }
       }
     },
@@ -63,45 +98,17 @@
     "effective_discs": [
       {
         "center": [
-          240.0,
-          146.0
-        ],
-        "opened_cells": 11
-      },
-      {
-        "center": [
-          224.0,
-          112.25
-        ],
-        "opened_cells": 1
-      },
-      {
-        "center": [
-          215.25,
-          120.0
-        ],
-        "opened_cells": 1
-      },
-      {
-        "center": [
           216.25,
           119.25
         ],
-        "opened_cells": 4
-      },
-      {
-        "center": [
-          222.0,
-          112.0
-        ],
-        "opened_cells": 1
+        "opened_cells": 2
       }
     ],
     "ordered_walks": [
       "walk_ne_fixes.json"
     ],
-    "opened_native_cells": 18,
-    "opened_map_area": 1.125,
+    "opened_native_cells": 2,
+    "opened_map_area": 0.125,
     "after": {
       "walk_ne_fixes.json": {
         "samples": 536,
@@ -138,34 +145,34 @@
         "samples": 536,
         "unsafe": 267,
         "near_classes": {
-          "boundary": 72,
-          "rock": 191,
-          "water": 128,
-          "grey": 128
+          "boundary": 94,
+          "rock": 137,
+          "water": 215,
+          "grey": 215
         }
       },
       "visited.json": {
         "samples": 723,
         "unsafe": 374,
         "near_classes": {
-          "boundary": 206,
-          "rock": 199,
-          "water": 187,
-          "grey": 187
+          "boundary": 167,
+          "rock": 169,
+          "water": 181,
+          "grey": 181
         }
       }
     }
   },
   "tab_to_map": [
     [
-      0.22219927350625307,
-      0.0004786788044408751,
-      -38.613233504877336
+      0.22250783746663513,
+      -0.0002870879639301647,
+      -38.4775519349859
     ],
     [
-      -0.0004786788044408751,
-      0.22219927350625307,
-      -12.835149350822544
+      0.0002870879639301647,
+      0.22250783746663513,
+      -14.245700992858419
     ]
   ],
   "arrow_checks": [
@@ -176,14 +183,14 @@
         649.5
       ],
       "mapped_arrow": [
-        241.6687529964859,
-        130.88014349789333
+        241.6958596404017,
+        130.63487027627312
       ],
       "live_fix": [
         240.87,
         130.51
       ],
-      "error": 0.8803479757618008
+      "error": 0.8352465094455251
     },
     {
       "capture": "fg_02.png",
@@ -192,14 +199,14 @@
         650.0
       ],
       "mapped_arrow": [
-        239.3358999640724,
-        130.99626926209308
+        239.35938380302008,
+        130.74310977138518
       ],
       "live_fix": [
         239.86,
         130.3
       ],
-      "error": 0.8714767541334308
+      "error": 0.668552799841319
     },
     {
       "capture": "fg_03.png",
@@ -208,14 +215,30 @@
         650.0
       ],
       "mapped_arrow": [
-        237.78050504952867,
-        130.99962001372415
+        237.80182894075364,
+        130.74110015563767
       ],
       "live_fix": [
         237.71,
         130.5
       ],
-      "error": 0.504570233092246
+      "error": 0.25799581277307787
+    },
+    {
+      "capture": "fg_04.png",
+      "tab_arrow": [
+        1211.0,
+        710.5
+      ],
+      "mapped_arrow": [
+        230.77546323873685,
+        144.19378105150525
+      ],
+      "live_fix": [
+        230.76,
+        143.71
+      ],
+      "error": 0.4840281164847299
     }
   ],
   "parameters": {
@@ -228,54 +251,68 @@
     "rock_max_area": 0.0,
     "water_saturation": 75,
     "block_neutral_grey": false,
-    "road_saturation": 135,
-    "road_value": 210,
+    "road_saturation": 180,
+    "road_value": 230,
     "road_gap": 4.0,
-    "road_half_width": 2.8
+    "road_half_width": 1.5
   },
   "coordinate_space": "live_minimap",
   "notes": "Fixes validate only; no arrow-based transform adjustment.",
   "asset_live_checks": [
     {
-      "matches": 203,
-      "inliers": 103,
-      "median_error": 0.46082736415455816,
-      "p95_error": 0.9533877617039812,
-      "offset": 0.08262984454631805,
-      "translation": [
-        -0.0548858642578125,
-        -0.061767578125
-      ],
-      "center_drift": 0.13562493841156475,
-      "p95_displacement": 1.2083793878555298,
-      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
-    },
-    {
-      "matches": 216,
-      "inliers": 107,
-      "median_error": 0.45539989469662157,
-      "p95_error": 0.9202850741893175,
-      "offset": 0.11478713154792786,
-      "translation": [
-        -0.0548858642578125,
-        -0.1008148193359375
-      ],
-      "center_drift": 0.18973181790436863,
-      "p95_displacement": 1.0600833892822266,
-      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
-    },
-    {
-      "matches": 190,
+      "matches": 211,
       "inliers": 101,
-      "median_error": 0.4551491425272094,
-      "p95_error": 0.8514545705446481,
-      "offset": 0.12602151930332184,
+      "median_error": 0.5028110850088179,
+      "p95_error": 1.0152326378688388,
+      "offset": 0.3438228368759155,
       "translation": [
-        -0.0548858642578125,
-        -0.11344146728515625
+        0.1603851318359375,
+        0.3041229248046875
       ],
-      "center_drift": 0.13652105442285722,
-      "p95_displacement": 1.2532212734222412,
+      "center_drift": 0.43232214699893606,
+      "p95_displacement": 1.2180854082107544,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    },
+    {
+      "matches": 219,
+      "inliers": 92,
+      "median_error": 0.41050899215382636,
+      "p95_error": 0.854545911869666,
+      "offset": 0.315690815448761,
+      "translation": [
+        0.1179046630859375,
+        0.2928466796875
+      ],
+      "center_drift": 0.3097550241412022,
+      "p95_displacement": 1.270695686340332,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    },
+    {
+      "matches": 197,
+      "inliers": 109,
+      "median_error": 0.4936625635507427,
+      "p95_error": 1.0794896585959461,
+      "offset": 0.30929815769195557,
+      "translation": [
+        0.12113189697265625,
+        0.2845916748046875
+      ],
+      "center_drift": 0.2684083539382203,
+      "p95_displacement": 1.270695686340332,
+      "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
+    },
+    {
+      "matches": 188,
+      "inliers": 107,
+      "median_error": 0.4693759432549143,
+      "p95_error": 0.8354196300181247,
+      "offset": 0.30138131976127625,
+      "translation": [
+        0.1243743896484375,
+        0.2745208740234375
+      ],
+      "center_drift": 0.3290659735267722,
+      "p95_displacement": 1.1439964771270752,
       "offset_definition": "median terrain displacement; similarity translation at off-map origin is not registration drift"
     }
   ],
@@ -295,40 +332,24 @@
         124.0
       ],
       [
-        241.5,
-        142.5
+        242.5,
+        143.25
       ],
       [
-        242.5,
+        245.0,
+        143.75
+      ],
+      [
+        246.5,
+        143.75
+      ],
+      [
+        248.0,
         142.75
       ],
       [
-        244.25,
-        142.25
-      ],
-      [
-        249.25,
-        140.0
-      ],
-      [
-        251.75,
-        136.75
-      ],
-      [
-        260.75,
-        130.75
-      ],
-      [
-        262.0,
-        130.75
-      ],
-      [
-        264.5,
-        130.0
-      ],
-      [
-        268.75,
-        126.75
+        271.25,
+        124.5
       ],
       [
         271.75,

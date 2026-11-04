@@ -19,7 +19,7 @@ import numpy as np
 
 from .config import NavigationConfig
 from .geometry import Point
-from .navigation_evidence import LearnedEvidence
+from .navigation_evidence import LearnedEvidence, open_observed_disc
 
 log = logging.getLogger(__name__)
 
@@ -330,6 +330,7 @@ class Zone:
     grid: WalkGrid
     evidence: LearnedEvidence | None = None
     base_grid: WalkGrid | None = None
+    road: np.ndarray | None = None
 
     @classmethod
     def load(cls, name: str, config: NavigationConfig | None = None):
@@ -358,7 +359,14 @@ class Zone:
         evidence = LearnedEvidence(folder / "learned.json", name, (x1-x0, y1-y0), scale)
         base = grid.copy_with(clearance, cfg.snap_radius)
         evidence.apply(grid)
-        return cls(name, folder, metadata, grid, evidence, base)
+        road = None
+        if (folder / "road.png").exists():
+            image = cv2.imread(str(folder / "road.png"), cv2.IMREAD_GRAYSCALE)
+            if image is None or image.shape != (y1-y0, x1-x0):
+                raise ValueError("road mask must match the minimap crop")
+            road = cv2.resize(image, (grid.mask.shape[1], grid.mask.shape[0]),
+                              interpolation=cv2.INTER_NEAREST) != 0
+        return cls(name, folder, metadata, grid, evidence, base, road)
 
     def goal(self, target) -> Point:
         if isinstance(target, str):
@@ -465,12 +473,13 @@ class NavigateTo:
         self.failed = False
         self.failed_point = None
         self.last_tick = None
+        self.no_route_reports = {}
 
-    def _fresh_grid(self):
+    def _fresh_grid(self, edges=None):
         base = self.zone.base_grid or self.zone.grid
         grid = base.copy_with(self.config.clearance if self.config.clearance is not None
                              else self.zone.grid.clearance, self.config.snap_radius)
-        self.evidence.apply(grid)
+        self.evidence.apply(grid, edges=edges)
         for point, radius in self.hazards:
             grid.block(point, radius)
         return grid
@@ -484,16 +493,84 @@ class NavigateTo:
     def record_position(self, location):
         """Dispatcher calls only for fixes obtained while real travel was moving."""
         if location is not None and self.evidence.observe(location.point):
+            self.no_route_reports.clear()
             was_safe = self.grid.is_safe(location.point)
             self.grid = self._fresh_grid()
             if not was_safe:
                 self.route = []
 
     def _plan(self, start, now):
-        self.route = self.grid.plan(start, self.goal)
+        try:
+            self.route = self.grid.plan(start, self.goal)
+        except ValueError as error:
+            message = self._learned_no_route(start)
+            if message is None:
+                raise
+            if message:
+                raise ValueError(message) from error
+            self.route = self.grid.plan(start, self.goal)
         self.index = 1
         self.progress_at = now
         self.motion_anchor = Point(*start)
+
+    @staticmethod
+    def _connected(grid, start, goal):
+        # This is the same connectivity as A* without diagonal corner cutting,
+        # but avoids a full failed search for each diagnostic edge subset.
+        try:
+            a, b = grid.snap(start), grid.snap(goal)
+        except ValueError:
+            return False
+        _, labels = cv2.connectedComponents(grid.safe.astype(np.uint8), connectivity=4)
+        x, y = [round(v*grid.scale) for v in a]
+        gx, gy = [round(v*grid.scale) for v in b]
+        return bool(labels[y, x] and labels[y, x] == labels[gy, gx])
+
+    def _learned_no_route(self, start):
+        if not self.evidence.edges:
+            return None
+        key = (tuple(round(v*self.grid.scale) for v in start), len(self.evidence.edges))
+        if key in self.no_route_reports:
+            return self.no_route_reports[key]
+        if not self._connected(self._fresh_grid(edges=[]), start, self.goal):
+            self.no_route_reports[key] = None
+            return None  # the base mask or a temporary combat hazard already prevents this route
+        opened = 0
+        if self.zone.road is not None:
+            near = cv2.dilate(self.zone.road.astype(np.uint8),
+                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                                       (2*self.grid.scale+1, 2*self.grid.scale+1)))
+            for point in self.evidence.positions.values():
+                x, y = np.rint(np.asarray(point)*self.grid.scale).astype(int)
+                if near[y, x]:
+                    opened += open_observed_disc(self.grid.mask, point, self.grid.scale)
+        if opened:
+            self.grid._inflate()
+            for point, radius in self.hazards:
+                self.grid.block(point, radius)
+        # These discs are normally already open; explicitly try them before
+        # diagnosing the cut. Never invent a corridor between sampled positions.
+        if self._connected(self.grid, start, self.goal):
+            log.warning("navigation: recovered learned-edge route with %d observed road-disc cells", opened)
+            return ""
+        removed = []
+        for i in range(len(self.evidence.edges)):
+            removed.append(i)
+            keep = [e for j, e in enumerate(self.evidence.edges) if j not in removed]
+            if self._connected(self._fresh_grid(edges=keep), start, self.goal):
+                break
+        # Minimise the explanatory cut set. These are diagnostic copies only;
+        # no edge is deleted from the task or its persisted evidence.
+        for i in removed[:]:
+            trial = [j for j in removed if j != i]
+            keep = [e for j, e in enumerate(self.evidence.edges) if j not in trial]
+            if self._connected(self._fresh_grid(edges=keep), start, self.goal):
+                removed = trial
+        message = (f"no route: learned edge indices {removed} disconnect goal; retained all edges; "
+                   f"observed road discs opened {opened} cells")
+        log.warning("navigation: %s", message)
+        self.no_route_reports[key] = message
+        return message
 
     def _clear_from(self, point, target) -> bool:
         """Line check from the player's exact spot or from its grid cell.
@@ -586,7 +663,8 @@ class NavigateTo:
                     return NavigationStep("stalled", location, waypoints=tuple(self.route))
                 self.stalls.append(point)
                 self.replans += 1
-                blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length, now)
+                blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length,
+                                              now, road=self.zone.road)
                 self.grid = self._fresh_grid()
                 log.warning("navigation: stall at %.2f,%.2f toward %.2f,%.2f; edge=%s; replan %d at spot",
                             point.x, point.y, target.x, target.y, blocked, attempts+1)
@@ -594,8 +672,7 @@ class NavigateTo:
                 # Return without a side-step click; next fresh tick follows the
                 # alternative route through the normal guarded dispatch path.
                 return NavigationStep("waiting", location, waypoints=tuple(self.route),
-                                      message=("stalled direction blocked; replanned around learned edge" if blocked
-                                               else "stall target too close to block safely; replanned"))
+                                      message=self.evidence.stall_message)
             click = screen_click(delta, self.config)
             return NavigationStep("move" if click is not None else "unsafe_click", location,
                                   click, tuple(self.route))

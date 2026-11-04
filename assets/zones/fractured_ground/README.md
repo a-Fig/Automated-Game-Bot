@@ -18,6 +18,8 @@ calibration, visited.json and runtime arrow fixes remain unchanged.
   the original minimap coordinates. mask.png remains a 400x360 summary. The fine
   grid preserves passages around small grey rocks that disappear when downsampled.
 - `road.png`: road/ramp corridor, for debugging and route checks.
+- `ramp_overlay.png` / `ramp_validation.json`: the local bend with all eight saved
+  run-8 edges retained (magenta), the road (green) and a verified mask route (white).
 - `mask_overlay.png`: red = blocked, green = road/ramp, cyan = independent live
   fixes, white = NE route, magenta = portal approaches. Display coordinates are x4.
 - `transform.json`: feature statistics, independent arrow errors, live/asset drift
@@ -37,7 +39,7 @@ calibration, visited.json and runtime arrow fixes remain unchanged.
 Rebuild from the original captures (reads images only, never game input):
 
 ```powershell
-python tools/zone/tabmap_mask.py --captures "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_01.png" "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_02.png" "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_03.png" --out-dir assets/zones/fractured_ground --reset-override
+python tools/zone/tabmap_mask.py --captures "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_01.png" "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_02.png" "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_03.png" "C:\Users\smash\PycharmProjects\datasets\albion_v2\tabmap\fg_04.png" --out-dir assets/zones/fractured_ground --check-learned tests/fixtures/navigation/learned_after_run8.json
 ```
 
 Each adjacent JSON supplies minimap_before, minimap_after and window. Use --fixes
@@ -50,8 +52,8 @@ are preserved on rebuilds. --observed-fixes accepts alternative fix files;
 
 Thresholds and widths are CLI parameters: --level-value 215, --ground-value 165,
 --boundary-width 0.25, --dark-rock-value 120, --rock-max-area 0,
---water-saturation 75, --road-saturation 135, --road-value 210, --road-gap 4,
---road-half-width 2.8, --rim-margin 15 and --scale 4. Neutral-grey blocking is off;
+--water-saturation 75, --road-saturation 180, --road-value 230, --road-gap 4,
+--road-half-width 1.5, --rim-margin 15 and --scale 4. Neutral-grey blocking is off;
 --block-neutral-grey opts in. Widths use map pixels, areas map pixels squared.
 Road width includes planning clearance. Lower thresholds or wider roads can reopen
 cliffs: inspect the overlay before live use. Poor feature fits, independent arrow
@@ -59,8 +61,10 @@ errors over 1.2px and asset/live drift over 1px are rejected. Drift means median
 terrain displacement and drift at the matched terrain centre, not a similarity's
 extrapolated translation at the off-map origin.
 
-The route from (240,130) first recovers to a nearby clear cell, takes the plateau
-ramp near (241,142), then follows the road to NE. Clearance 2.0 over-inflates fine
+The road/ramp is a hypothesis, not a proven crossing at (241,142). With all eight
+run-8 edges, the checked route from the gully heads south around the cliff near
+(240,146.5), follows the bend near (247.5,143.25), then goes NE. Live validation is
+still needed. Clearance 2.0 over-inflates fine
 rocks and disconnects it; remove a legacy explicit clearance=2.0 to inherit 1.0.
 Zones without their own clearance still default to 2.0.
 
@@ -80,15 +84,33 @@ water, flat rock or another kind of floor.
 
 With grey blocking off, no size-only blob blocking, a very-dark cutoff of 120,
 and the 215 level cutoff, all 536 hand-walk samples are safe before corrections.
-Six visited samples remain at boundary/clearance edges. Last-resort radius-1-map-px
-discs at observed positions change just 18 native 4x cells (1.125 map-pixel squared)
-across five effective discs. All 1,259 samples are then directly safe; all 535
+The original basin correction used 18 native cells in five discs. After the four-
+capture registration and road correction, two visited samples need edge corrections:
+radius-1-map-px discs change only 2 native 4x cells (0.125 map-pixel squared) in one
+effective disc. All 1,259 samples are then directly safe; all 535
 consecutive hand-walk pairs connect. The report lists each disc centre and count,
-and tests enforce the 18-cell budget. No blanket route/visited override is restored.
+and tests enforce the 2-cell count. No blanket route/visited override is restored.
 The discs override the classifier's estimated edge where standing evidence
 contradicts it. Their radius is capped at 1.0; --disc-radius 0 disables them and
 fails validation if any observed position is unsafe. Unknown blue-hued regions
 remain blocked, but their actual game meaning has not been established here.
+
+## Run 8 road bend check
+
+fg_04 is included in fitting and independent validation. Terrain features are now
+detected at half Tab resolution rather than quarter, avoiding an unstable rotation
+fit when the fourth capture is added. Independent arrow errors are 0.26-0.84 map
+pixels; fg_04 is 0.48. Around (235-250,130-145), its six terrain matches have median
+error 1.14 pixels, mostly Y. That local sampling uncertainty is reported rather
+than calling the whole bend subpixel-accurate. Portal coordinates and live movement
+calibration are unchanged.
+
+The road rule now rejects lower-saturation floor pixels and dilates by 1.5 rather
+than 2.8 map pixels. Crucially, the old floor-derived playable contour clipped the
+orange road through dark ground; only broad dilation could connect around that
+false cut. Roads now use the outer playable footprint instead, preserving the
+narrow orange bend without widening away known cliffs. All eight run-8 edges stay
+active in the saved route check. No edge is removed to manufacture connectivity.
 
 Bushes, trees and mobs still require local avoidance. Unmarked ramps may be omitted.
 Icon anchors have subpixel uncertainty; overrides remain useful for verified

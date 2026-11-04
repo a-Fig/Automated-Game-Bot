@@ -7,17 +7,17 @@
         "boundary": 0,
         "rock": 0,
         "water": 0,
-        "grey": 128
+        "grey": 215
       }
     },
     "visited.json": {
       "samples": 723,
-      "unsafe": 6,
+      "unsafe": 2,
       "near_classes": {
-        "boundary": 9,
+        "boundary": 6,
         "rock": 0,
         "water": 0,
-        "grey": 187
+        "grey": 181
       }
     }
   },
@@ -26,45 +26,17 @@
   "effective_discs": [
     {
       "center": [
-        240.0,
-        146.0
-      ],
-      "opened_cells": 11
-    },
-    {
-      "center": [
-        224.0,
-        112.25
-      ],
-      "opened_cells": 1
-    },
-    {
-      "center": [
-        215.25,
-        120.0
-      ],
-      "opened_cells": 1
-    },
-    {
-      "center": [
         216.25,
         119.25
       ],
-      "opened_cells": 4
-    },
-    {
-      "center": [
-        222.0,
-        112.0
-      ],
-      "opened_cells": 1
+      "opened_cells": 2
     }
   ],
   "ordered_walks": [
     "walk_ne_fixes.json"
   ],
-  "opened_native_cells": 18,
-  "opened_map_area": 1.125,
+  "opened_native_cells": 2,
+  "opened_map_area": 0.125,
   "after": {
     "walk_ne_fixes.json": {
       "samples": 536,
@@ -101,20 +73,20 @@
       "samples": 536,
       "unsafe": 267,
       "near_classes": {
-        "boundary": 72,
-        "rock": 191,
-        "water": 128,
-        "grey": 128
+        "boundary": 94,
+        "rock": 137,
+        "water": 215,
+        "grey": 215
       }
     },
     "visited.json": {
       "samples": 723,
       "unsafe": 374,
       "near_classes": {
-        "boundary": 206,
-        "rock": 199,
-        "water": 187,
-        "grey": 187
+        "boundary": 167,
+        "rock": 169,
+        "water": 181,
+        "grey": 181
       }
     }
   }

@@ -32,10 +32,10 @@ class Parameters:
     rock_max_area: float = 0.0  # size alone is not evidence of an obstacle
     water_saturation: int = 75
     block_neutral_grey: bool = False  # observed basin fixes cross these warm-grey patches
-    road_saturation: int = 135
-    road_value: int = 210
+    road_saturation: int = 180
+    road_value: int = 230
     road_gap: float = 4.0
-    road_half_width: float = 2.8  # survives the runtime's 2-pixel clearance
+    road_half_width: float = 1.5  # narrow ramps, with the zone's 1-pixel clearance
 
 
 @dataclass
@@ -137,8 +137,10 @@ def register(samples, reference):
     cv2.fillPoly(live_mask, [np.array([[210, 55], [375, 170], [210, 285], [40, 170]], np.int32)], 255)
     live_pairs, reference_pairs = [], []
     for sample in samples:
-        live_pairs.append(feature_pairs(sample.image, sample.minimap, sample.origin, 0.25, live_mask))
-        reference_pairs.append(feature_pairs(sample.image, reference, sample.origin, 0.25))
+        # Half-size Tab features retain the detail around the narrow ramp bend;
+        # quarter-size sampling made the four-capture rotation fit unstable.
+        live_pairs.append(feature_pairs(sample.image, sample.minimap, sample.origin, 0.5, live_mask))
+        reference_pairs.append(feature_pairs(sample.image, reference, sample.origin, 0.5))
     live, diagnostics = fit_similarity(np.concatenate([p[0] for p in live_pairs]),
                                        np.concatenate([p[1] for p in live_pairs]))
     old, old_diagnostics = fit_similarity(np.concatenate([p[0] for p in reference_pairs]),
@@ -217,7 +219,10 @@ def segment(image, footprint, params: Parameters):
             j, k = np.unravel_index(distances.argmin(), distances.shape)
             if distances[j, k] <= (p.road_gap*scale)**2:
                 cv2.line(long_roads, tuple(a[j]), tuple(b[k]), 255, max(1, round(scale*0.4)))
-    road = cv2.dilate(long_roads, kernel(p.road_half_width, scale)) & inside
+    # The floor contour can exclude a dark gully at a ramp. An orange road is
+    # evidence there too; clip it to the playable footprint, not the floor class.
+    road = cv2.dilate(long_roads, kernel(p.road_half_width, scale)) & footprint
+    inside |= road
     walkable = (inside != 0) & (boundary == 0) & (rock == 0) & (water == 0)
     walkable |= road != 0  # a road crossing a level boundary is a ramp
     return {"inside": inside != 0, "boundary": boundary != 0, "rock": rock != 0, "grey": grey != 0,
@@ -299,7 +304,7 @@ def apply_observations(layers, observations, scale, clearance, disc_radius=1.0, 
 
 
 def build(samples, reference, params=None, observations=None, disc_radius=1.0,
-          baseline=None, baseline_parameters=None, ordered_walks=()):
+          baseline=None, baseline_parameters=None, ordered_walks=(), registration_roi=None):
     p = params or Parameters()
     if (p.scale < 1 or p.rim_margin < 0 or p.boundary_width < 0 or p.rock_max_area < 0 or p.road_gap < 0
             or p.road_half_width < 0 or not 0 < p.ground_value <= p.level_value <= 255
@@ -307,6 +312,20 @@ def build(samples, reference, params=None, observations=None, disc_radius=1.0,
             or not 0 <= p.water_saturation <= 255 or not 0 <= p.road_saturation <= 255):
         raise ValueError("invalid mask parameters")
     matrix, correction, report = register(samples, reference)
+    if registration_roi is not None:
+        x0, y0, x1, y1 = registration_roi
+        local = []
+        for sample in samples:
+            a, b = feature_pairs(sample.image, sample.minimap, sample.origin, 0.5)
+            selected = (b[:, 0] >= x0) & (b[:, 0] <= x1) & (b[:, 1] >= y0) & (b[:, 1] <= y1)
+            selected &= np.linalg.norm(b-sample.fix, axis=1) > 3  # terrain only, not the player icon
+            residual = np.linalg.norm(project(a[selected], matrix)-b[selected], axis=1)
+            if len(residual) < 2 or np.median(residual) > 1.5:
+                raise ValueError(f"{sample.name}: insufficient local registration agreement in {registration_roi}")
+            local.append({"capture": sample.name, "matches": len(residual),
+                          "median_error": float(np.median(residual)), "max_error": float(residual.max())})
+        report["local_registration"] = {"rect": registration_roi, "checks": local,
+                                         "note": "tiny minimap features have about one pixel of sampling uncertainty"}
     size = (400*p.scale, 360*p.scale)
     aligned, checks = [], []
     for sample in samples:
@@ -354,6 +373,46 @@ def build(samples, reference, params=None, observations=None, disc_radius=1.0,
 def write_png(path, image):
     if not cv2.imwrite(str(path), image):
         raise OSError(f"could not write {path}")
+
+
+def write_learned_check(output, image, layers, metadata, evidence_path, scale):
+    """Audit saved collision evidence against this mask; never modify the evidence."""
+    from albot.navigation import ScaledWalkGrid
+    from albot.navigation_evidence import LearnedEvidence
+    evidence = LearnedEvidence(evidence_path, metadata["name"].lower().replace(" ", "_"), (400, 360), scale)
+    if not evidence.edges:
+        raise ValueError("learned check needs at least one recorded stall")
+    grid = evidence.apply(ScaledWalkGrid(layers["walkable"], scale, metadata["clearance"]))
+    start, goal = evidence.edges[-1]["player"], metadata["portals"]["NE"]["approach"]
+    route = grid.plan(start, goal)
+    report = {"evidence": Path(evidence_path).name, "retained_edges": len(evidence.edges),
+              "start": start, "goal": goal, "route": [list(p) for p in route]}
+    (Path(output) / "ramp_validation.json").write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
+    overlay = image.copy()
+    overlay[layers["road"]] = (overlay[layers["road"]]*0.4+np.array((40, 220, 40))*0.6).astype(np.uint8)
+    for i, edge in enumerate(evidence.edges):
+        a, b = [tuple(np.rint(np.asarray(edge[k])*scale).astype(int)) for k in ("a", "b")]
+        cv2.line(overlay, a, b, (255, 0, 255), 1)
+        cv2.putText(overlay, str(i), a, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 255), 1)
+    cv2.polylines(overlay, [np.rint(np.asarray(route)*scale).astype(int)], False, (255, 255, 255), 1)
+    # The local ramp check's map coordinates; retain pixel axes for inspection.
+    x0, y0, x1, y1 = metadata["registration_check_rect"]
+    x0, y0, x1, y1 = x0-10, y0-5, x1+10, y1+8
+    crop = cv2.resize(overlay[y0*scale:y1*scale, x0*scale:x1*scale], None,
+                      fx=3, fy=3, interpolation=cv2.INTER_NEAREST)
+    for x in range(math.ceil(x0/5)*5, x1, 5):
+        px = (x-x0)*scale*3
+        cv2.line(crop, (px, 0), (px, crop.shape[0]-1), (80, 80, 80), 1)
+        cv2.putText(crop, str(x), (px+2, 15), 0, 0.4, (255, 255, 255), 1)
+    for y in range(math.ceil(y0/5)*5, y1, 5):
+        py = (y-y0)*scale*3
+        cv2.line(crop, (0, py), (crop.shape[1]-1, py), (80, 80, 80), 1)
+        cv2.putText(crop, str(y), (2, py+15), 0, 0.4, (255, 255, 255), 1)
+    crop = cv2.copyMakeBorder(crop, 30, 0, 0, 0, cv2.BORDER_CONSTANT)
+    cv2.putText(crop, "green: road; magenta: retained edges; white: route", (8, 20), 0, 0.42,
+                (255, 255, 255), 1, cv2.LINE_AA)
+    write_png(Path(output) / "ramp_overlay.png", crop)
+    return report
 
 
 def write_outputs(output, image, mask, layers, report, metadata, reset_override=False,
@@ -445,6 +504,7 @@ def main(argv=None):
     parser.add_argument("--ordered-walks", nargs="*", help="observed filenames whose consecutive fixes must connect")
     parser.add_argument("--disc-radius", type=float, default=1.0, help="last-resort observed disc radius, at most 1 map px")
     parser.add_argument("--baseline-mask", help="previous high-resolution mask for the audit report")
+    parser.add_argument("--check-learned", help="saved evidence for a read-only local ramp overlay/route check")
     for field in dataclasses.fields(Parameters):
         if isinstance(field.default, bool):
             parser.add_argument("--"+field.name.replace("_", "-"), action=argparse.BooleanOptionalAction,
@@ -472,8 +532,11 @@ def main(argv=None):
         baseline = baseline != 0
     image, mask, layers, report = build(samples, read_image(args.reference), parameters, observations,
                                        args.disc_radius, baseline, baseline_info.get("parameters"),
-                                       args.ordered_walks if args.ordered_walks is not None else metadata.get("observed_walks", []))
+                                       args.ordered_walks if args.ordered_walks is not None else metadata.get("observed_walks", []),
+                                       metadata.get("registration_check_rect"))
     write_outputs(args.out_dir, image, mask, layers, report, metadata, args.reset_override, observations, baseline)
+    if args.check_learned:
+        write_learned_check(args.out_dir, image, layers, metadata, args.check_learned, parameters.scale)
     print(json.dumps(report, indent=2))
     print(f"mask/overlay written to {args.out_dir}")
     return 0

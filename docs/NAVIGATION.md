@@ -139,7 +139,13 @@ nearby stalls), rather than sharing a small budget across the journey. The defau
 is 8; an old explicit 3 still means 3 per spot. Lost fixes and pauses over two
 seconds do not count as stuck time. `side_step_seconds` is accepted for old TOMLs
 but unused. A learned edge that disconnects the goal is retained and reported as
-no_route; the existing travel give-up timer then clears the goal safely.
+no_route. The controller first reapplies radius-1 observed standing discs near the
+road; if still disconnected, the log identifies a minimal set of edge indices
+whose removal would restore the route. Those removals happen only in diagnostic
+copies, never in the task or JSON. Existing discs are normally already open, so
+the reported additional cell count is usually zero. If the base mask cannot route
+even without edges, it reports the normal mask failure instead. The existing travel
+give-up timer then clears the goal safely. A real cliff outranks a guessed road.
 Arrival means near the portal's **approach point**, not a completed zone transfer.
 
 ## Learned travel evidence
@@ -170,12 +176,35 @@ fix contradicting an edge opens its local disc and protects that cell; it does n
 prove that the whole surrounding cliff is passable. Combat danger blocks stay
 separate, temporary, and survive terrain replans.
 
+An edge crossing road.png needs two stalls within 1.5 map pixels before becoming
+active. The first is saved as an unapplied `road_stalls` entry so a repeat on the
+next run can confirm it. Existing active edges remain authoritative on load;
+legacy evidence is not discarded for lacking a confirmation field. Both pending
+and active nearby stall origins count toward confirmation. Confirmed road edges
+are kept even when they disconnect a route: the road mask may be wrong.
+
 Normal `nav --dry-run`, dry-run bot input and replay never write learned evidence.
 Standalone guarded dispatchers can opt into `NavigateTo(..., learn=True)` and call
 `tick(frame, now, moving=True)` only while previously dispatched movement is active.
 `record_position(location)` is available for their retreat path. Merely proposing
 a click is not evidence that movement occurred. The integrated travel behavior
 sets these flags through its existing input/safety path.
+
+List or explicitly retract evidence without opening the game:
+
+```powershell
+python -m albot nav-edges list --zone fractured_ground
+python -m albot nav-edges retract --zone fractured_ground --index 7
+python -m albot nav-edges retract --zone fractured_ground --near 238.57,143.05 --radius 1.5
+python -m albot nav-edges list --file "copied_learned.json"
+```
+
+Indices are zero-based and renumber after retraction. `--near` matches either the
+stall origin or the segment. Retraction also clears associated pending road stalls;
+standing positions are kept. `--file` targets a copied JSON instead of the zone's
+runtime file. Stop travel before retracting: a running task keeps its own snapshot
+and can overwrite a concurrent edit. List and preview are read-only. Retraction
+uses the same atomic writer as travel and requires an explicit index/near selector.
 
 ## Offline position-log audit
 
@@ -190,7 +219,7 @@ sample chords rejected by the mask. `--bot-log` excludes samples before travel's
 first move and after arrival/give-up, and reports the controller's stalled time.
 Sparse sample chords are not measured paths or the actual commanded clicks.
 
-The saved `docs/travel6_replay.json` audit shows the terminal stationary span from
+The saved `docs/travel6_replay.json` audit, using the pre-fg_04 mask, shows the terminal stationary span from
 04:28:31 to 04:29:02 near (238.3,136.2), where fresh plans still aim at
 (239.75,140.75). The controller had already stalled at 04:28:35 and gave up at
 04:29:05, so the whole 31-second span was not active walking. Earlier fixes bend

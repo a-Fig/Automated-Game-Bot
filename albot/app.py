@@ -216,6 +216,14 @@ def main(argv=None) -> int:
     nav.add_argument("--image", help="saved frame instead of live capture")
     nav.add_argument("--zone", help="zone asset folder name")
     nav.add_argument("--calibration", help="JSON from nav-calibrate --samples")
+    edges = sub.add_parser("nav-edges", help="list or retract learned edges without game input")
+    edges.add_argument("action", choices=("list", "retract"))
+    edges.add_argument("--zone", help="zone asset folder name")
+    edges.add_argument("--file", help="alternative learned JSON, e.g. a copied run file")
+    selector = edges.add_mutually_exclusive_group()
+    selector.add_argument("--index", type=int, nargs="+", help="zero-based indices from list")
+    selector.add_argument("--near", help="retract edges near minimap x,y (including stall origins)")
+    edges.add_argument("--radius", type=float, default=1.5, help="near radius in map pixels")
     calibrate = sub.add_parser("nav-calibrate", help="measure or solve the map-to-screen transform")
     calibrate.add_argument("--probe", help="one screen displacement, e.g. 350,0")
     calibrate.add_argument("--execute", action="store_true", help="allow one live calibration click")
@@ -227,10 +235,11 @@ def main(argv=None) -> int:
     setup_logging(cfg)
     if not os.path.exists(args.config):
         log.info("no %s found, using defaults (copy albot.example.toml to change them)", args.config)
-    if args.command in ("nav", "nav-calibrate"):
+    if args.command in ("nav", "nav-calibrate", "nav-edges"):
         from .navigation_cli import cmd_calibrate, cmd_nav
+        from .navigation_edges_cli import cmd_edges
         try:
-            return (cmd_nav if args.command == "nav" else cmd_calibrate)(cfg, args)
+            return {"nav": cmd_nav, "nav-calibrate": cmd_calibrate, "nav-edges": cmd_edges}[args.command](cfg, args)
         except (ValueError, OSError) as e:
             log.error("%s", e)
             return 1

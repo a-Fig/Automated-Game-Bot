@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -163,3 +164,122 @@ def test_replay_identifies_the_unreached_ramp_and_excludes_post_travel(tmp_path)
     assert all(p["time"] <= "04:29:05" for p in report["plans"])
     assert report["excluded_outside_travel"] > 0 and report["disagreements"]
     assert len(read_positions(fixture)) == 25
+
+
+FIXTURES = Path(__file__).parent / "fixtures/navigation"
+
+
+def run7_zone(tmp_path, count=8):
+    folder = tmp_path / "fractured_ground"
+    folder.mkdir()
+    current = Zone.load("fractured_ground")
+    (folder / "zone.json").write_text(json.dumps(current.metadata))
+    shutil.copyfile(FIXTURES / "mask_before_run8.png", folder / "mask_hires.png")
+    old = cv2.imread(str(folder / "mask_hires.png"), 0)
+    cv2.imwrite(str(folder / "mask.png"), cv2.resize(old, (400, 360)))
+    cv2.imwrite(str(folder / "override.png"), np.full((360, 400), 128, np.uint8))
+    shutil.copyfile(FIXTURES / "road_before_run8.png", folder / "road.png")
+    data = json.loads((FIXTURES / "learned_run7_raw.json").read_text())
+    data["edges"] = data["edges"][:count]
+    (folder / "learned.json").write_text(json.dumps(data))
+    cfg = NavigationConfig(assets_folder=str(tmp_path), calibrated=True)
+    return Zone.load("fractured_ground", cfg), cfg
+
+
+def test_run7_road_edge_is_deferred_then_confirmed_across_restart(tmp_path, caplog):
+    zone, cfg = run7_zone(tmp_path, 7)
+    raw = json.loads((FIXTURES / "learned_run7_raw.json").read_text())
+    position = Point(*raw["edges"][-1]["player"])
+    nav = NavigateTo("portal:NE", zone, cfg, learn=True)
+    nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*position, None, 0.95))
+    for now in range(5):
+        step = nav.tick(None, now, moving=True)
+    assert step.status == "waiting" and "second stall" in step.message
+    assert len(nav.evidence.edges) == 7 and len(nav.evidence.road_stalls) == 1
+    assert nav._connected(nav.grid, position, nav.goal)
+    saved = json.loads((zone.folder / "learned.json").read_text())
+    assert len(saved["edges"]) == 7 and len(saved["road_stalls"]) == 1
+
+    # Run 8 repeated the same real cliff within 1.5px. It must be retained even
+    # though the old mask then has no alternative, rather than silently dropped.
+    repeat = json.loads((FIXTURES / "learned_after_run8.json").read_text())["edges"][-1]
+    position = Point(*repeat["player"])
+    nav = NavigateTo("portal:NE", Zone.load(zone.name, cfg), cfg, learn=True)
+    nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*position, None, 0.95))
+    for now in range(5):
+        step = nav.tick(None, now, moving=True)
+    assert step.status == "no_route" and "learned edge indices [7]" in step.message
+    assert "retained all edges" in caplog.text and "road discs opened 0 cells" in caplog.text
+    assert len(nav.evidence.edges) == 8
+    assert len(json.loads((zone.folder / "learned.json").read_text())["edges"]) == 8
+
+
+def test_load_keeps_real_cut_edges_and_reports_the_cut_without_rewriting_file(tmp_path):
+    zone, cfg = run7_zone(tmp_path)
+    path = zone.folder / "learned.json"
+    before = path.read_bytes()
+    assert len(zone.evidence.edges) == 8
+    nav = NavigateTo("portal:NE", zone, cfg)
+    point = Point(*zone.evidence.edges[-1]["player"])
+    with pytest.raises(ValueError, match=r"edge indices \[7\].*retained all edges"):
+        nav._plan(point, 0)
+    assert path.read_bytes() == before and len(nav.evidence.edges) == 8
+    assert nav.grid.is_safe(point)
+
+
+def test_corrected_road_routes_around_all_run8_edges():
+    zone = Zone.load("fractured_ground")
+    zone.evidence = LearnedEvidence(FIXTURES / "learned_after_run8.json", zone.name, (400, 360), 4)
+    original = (FIXTURES / "learned_after_run8.json").read_bytes()
+    for point in ((238.57, 143.05), (230.76, 143.71), (221.6, 121.2)):
+        nav = NavigateTo("portal:NE", zone)
+        nav._plan(point, 0)
+        assert len(nav.evidence.edges) == 8
+        assert max(p.y for p in nav.route) >= 146  # south around the confirmed cliff, then NE
+        assert all(nav.grid.line_clear(a, b) for a, b in zip(nav.route, nav.route[1:]))
+    assert (FIXTURES / "learned_after_run8.json").read_bytes() == original
+
+
+def test_observed_road_disc_recovery_keeps_the_edge(tmp_path, caplog):
+    cfg = saved_zone(tmp_path)
+    zone = Zone.load("test", cfg)
+    zone.grid.mask[:] = False
+    zone.grid.mask[20, :] = True
+    zone.grid._inflate()
+    zone.base_grid = zone.grid.copy_with(0, 8)
+    zone.road = zone.grid.mask.copy()
+    nav = NavigateTo((35, 20), zone, cfg)
+    nav.evidence.stall((10, 10), (15, 10), 0, 6, 0)
+    nav.evidence.observe((25, 20))
+    nav.grid = nav._fresh_grid()
+    nav.grid.mask[:, 25] = False  # stale task grid predates the standing disc
+    nav.grid._inflate()
+    nav._plan((20, 20), 0)
+    assert nav.route and len(nav.evidence.edges) == 1
+    assert "recovered learned-edge route" in caplog.text
+
+
+def test_edge_cli_lists_and_retracts_by_index_or_near_without_input(tmp_path, monkeypatch, capsys):
+    from albot import app, actuator, navigation_cli
+    monkeypatch.setattr(app, "setup_logging", lambda cfg: None)
+    monkeypatch.setattr(navigation_cli, "live_capture", lambda cfg: pytest.fail("no capture"))
+    monkeypatch.setattr(actuator, "Input", lambda *args: pytest.fail("no game input"))
+    path = tmp_path / "learned.json"
+    shutil.copyfile(FIXTURES / "learned_run7_raw.json", path)
+    before = path.read_bytes()
+    args = ["nav-edges", "list", "--file", str(path)]
+    assert app.main(args) == 0
+    listing = json.loads(capsys.readouterr().out)
+    assert [e["index"] for e in listing["edges"]] == list(range(8))
+    assert path.read_bytes() == before
+    assert app.main(["nav-edges", "retract", "--file", str(path), "--index", "7"]) == 0
+    assert json.loads(capsys.readouterr().out)["retracted_indices"] == [7]
+    saved = json.loads(path.read_text())
+    point = saved["edges"][1]["player"]
+    assert len(saved["edges"]) == 7
+    assert app.main(["nav-edges", "retract", "--file", str(path), "--near",
+                     f"{point[0]},{point[1]}", "--radius", "0.2"]) == 0
+    assert json.loads(capsys.readouterr().out)["retracted_indices"] == [1]
+    before = path.read_bytes()
+    assert app.main(["nav-edges", "retract", "--file", str(path), "--index", "99"]) == 1
+    assert path.read_bytes() == before

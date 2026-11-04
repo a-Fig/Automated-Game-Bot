@@ -30,6 +30,8 @@ class LearnedEvidence:
         self.zone, self.size, self.scale = zone, tuple(size), scale
         self.positions = {}  # one disc per native cell; repeated fixes add no new ground
         self.edges = []
+        self.road_stalls = []  # unconfirmed, unapplied road crossings survive restart
+        self.stall_message = ""
         if self.path is not None and self.path.exists():
             data = json.loads(self.path.read_text(encoding="utf-8"))
             if (data.get("version") != 1 or data.get("zone") != zone
@@ -39,10 +41,11 @@ class LearnedEvidence:
             for point in data["positions"]:
                 self._check(point)
                 self.positions[tuple(np.rint(np.asarray(point)*scale).astype(int))] = point
-            for edge in data["edges"]:
+            for edge in [*data["edges"], *data.get("road_stalls", [])]:
                 for key in ("player", "target", "a", "b"):
                     self._check(edge[key])
-                self.edges.append(edge)
+            self.edges = data["edges"]
+            self.road_stalls = data.get("road_stalls", [])
 
     def _check(self, point):
         if (len(point) != 2 or not all(math.isfinite(v) for v in point)
@@ -61,7 +64,8 @@ class LearnedEvidence:
             return
         data = {"version": 1, "coordinate_space": "live_minimap", "zone": self.zone,
                 "size": list(self.size), "scale": self.scale,
-                "positions": list(self.positions.values()), "edges": self.edges}
+                "positions": list(self.positions.values()), "edges": self.edges,
+                "road_stalls": self.road_stalls}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(".json.tmp")
         temp.write_text(json.dumps(data, indent=2)+"\n", encoding="utf-8")
@@ -76,7 +80,7 @@ class LearnedEvidence:
         self.save()
         return True
 
-    def stall(self, player, target, clearance, length, now):
+    def stall(self, player, target, clearance, length, now, road=None):
         self._check(player)
         self._check(target)
         direction = np.asarray(target, float)-player
@@ -91,16 +95,57 @@ class LearnedEvidence:
             side = np.array((-direction[1], direction[0]))*length/2
             a, b = center-side, center+side
         limit = np.asarray(self.size)-1/self.scale
-        self.edges.append({"player": list(player), "target": list(target), "at": now,
-                           "a": np.clip(a, 0, limit).tolist(), "b": np.clip(b, 0, limit).tolist()})
+        edge = {"player": list(player), "target": list(target), "at": now,
+                "a": np.clip(a, 0, limit).tolist(), "b": np.clip(b, 0, limit).tolist()}
+        if road is not None and self.crosses_road(edge, road):
+            repeats = sum(math.dist(player, old["player"]) <= 1.5 for old in [*self.edges, *self.road_stalls])
+            if not repeats:
+                self.road_stalls.append(edge)
+                self.stall_message = "first road stall: edge deferred until a second stall within 1.5px"
+                self.save()
+                return False
+        self.edges.append(edge)
+        self.stall_message = ("stalled direction blocked; replanned around learned edge" if distance > offset
+                              else "stall target too close to block safely; replanned")
         self.save()
         return distance > offset
 
-    def apply(self, grid, protect=()):
+    def crosses_road(self, edge, road):
+        pixels = np.zeros(road.shape, np.uint8)
+        a, b = [tuple(np.rint(np.asarray(edge[k])*self.scale).astype(int)) for k in ("a", "b")]
+        cv2.line(pixels, a, b, 1, 1)
+        return bool(np.any((pixels != 0) & road))
+
+    @staticmethod
+    def distance(edge, point):
+        a, b, point = np.asarray(edge["a"]), np.asarray(edge["b"]), np.asarray(point)
+        vector = b-a
+        t = np.clip(np.dot(point-a, vector)/max(float(np.dot(vector, vector)), 1e-9), 0, 1)
+        return min(math.dist(point, edge["player"]), float(np.linalg.norm(point-(a+t*vector))))
+
+    def retract(self, indices=(), near=None, radius=1.5):
+        chosen = set(indices)
+        if any(not 0 <= i < len(self.edges) for i in chosen):
+            raise ValueError("edge index outside the listed range")
+        if near is not None:
+            self._check(near)
+            chosen.update(i for i, edge in enumerate(self.edges) if self.distance(edge, near) <= radius)
+        removed = [edge for i, edge in enumerate(self.edges) if i in chosen]
+        pending = [e for e in self.road_stalls
+                   if (near is not None and self.distance(e, near) <= radius)
+                   or any(math.dist(e["player"], old["player"]) <= 1.5 for old in removed)]
+        if not removed and not pending:
+            raise ValueError("no learned edges or pending road stalls matched")
+        self.edges = [e for i, e in enumerate(self.edges) if i not in chosen]
+        self.road_stalls = [e for e in self.road_stalls if e not in pending]
+        self.save()
+        return sorted(chosen), len(pending)
+
+    def apply(self, grid, protect=(), edges=None):
         for point in self.positions.values():
             open_observed_disc(grid.mask, point, grid.scale)
         blocked = np.zeros(grid.mask.shape, np.uint8)
-        for edge in self.edges:
+        for edge in self.edges if edges is None else edges:
             a, b = [tuple(np.rint(np.asarray(edge[k])*grid.scale).astype(int)) for k in ("a", "b")]
             cv2.line(blocked, a, b, 1, 1)
         # Positive standing evidence wins over a guessed edge. Protect a full

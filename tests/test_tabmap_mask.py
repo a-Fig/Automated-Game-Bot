@@ -9,7 +9,7 @@ from albot.config import NavigationConfig, load
 from albot.geometry import Point
 from albot.navigation import NavigateTo, ScaledWalkGrid, WalkGrid, Zone
 from tools.zone.tabmap_mask import (Parameters, build, check_live_registration, load_sample,
-                                    project, read_image, segment, write_outputs, apply_observations)
+                                    project, read_image, segment, write_outputs, apply_observations, write_learned_check)
 
 
 FIXTURES = Path(__file__).parent / "fixtures/tabmap"
@@ -23,13 +23,13 @@ def observations():
 
 @pytest.fixture(scope="module")
 def generated(observations):
-    samples = [load_sample(FIXTURES / f"fg_0{i}.png") for i in range(1, 4)]
+    samples = [load_sample(FIXTURES / f"fg_0{i}.png") for i in range(1, 5)]
     folder = Path(__file__).parent.parent / "assets/zones/fractured_ground"
     metadata = json.loads((folder / "zone.json").read_text())
     return samples, build(samples, read_image(FIXTURES / "reference_old.png"), observations=observations,
                            baseline=read_image(folder / "mask_before_basin.png")[:, :, 0] != 0,
                            baseline_parameters=metadata["observation_baseline"]["parameters"],
-                           ordered_walks=["walk_ne_fixes.json"])
+                           ordered_walks=["walk_ne_fixes.json"], registration_roi=metadata["registration_check_rect"])
 
 
 def test_tab_terrain_transform_recovers_independent_live_fixes(generated):
@@ -40,6 +40,10 @@ def test_tab_terrain_transform_recovers_independent_live_fixes(generated):
         recovered = project([check["tab_arrow"]], report["tab_to_map"])[0]
         assert np.linalg.norm(recovered-sample.fix) < 1.0
     assert report["reference_to_live"][1][2] > 7
+    local = report["local_registration"]["checks"][-1]
+    assert local["capture"] == "fg_04.png" and local["matches"] >= 6
+    assert local["median_error"] < 1.5
+    assert report["arrow_checks"][-1]["error"] < 0.5
 
 
 def test_asset_live_registration_stays_below_one_pixel_and_rejects_drift(generated):
@@ -159,7 +163,7 @@ def test_generated_outputs_are_png_masks_and_neutral_override(tmp_path, generate
     assert zone["coordinate_space"] == "live_minimap" and zone["clearance"] == 1
     assert zone["portals"]["NE"]["approach"][1] > 123
     validation = json.loads((tmp_path / "observation_validation.json").read_text())
-    assert validation["opened_native_cells"] == 18
+    assert validation["opened_native_cells"] == 2
     assert validation["disc_radius"] == 1
     old_goal = list(zone["portals"]["NE"]["approach"])
     write_outputs(tmp_path, image, mask, layers, dict(report), zone)
@@ -172,6 +176,17 @@ def test_inconsistent_fixes_fail_independent_arrow_check(generated):
     wrong = [replace(sample, fix=sample.fix+np.array((0, 5))) for sample in samples]
     with pytest.raises(ValueError, match="independent arrow error"):
         build(wrong, read_image(FIXTURES / "reference_old.png"))
+
+
+def test_local_ramp_overlay_keeps_run8_edges_and_bends_around_cliff(tmp_path, generated):
+    _, (image, _, layers, report) = generated
+    folder = Path(__file__).parent.parent / "assets/zones/fractured_ground"
+    metadata = json.loads((folder / "zone.json").read_text())
+    evidence = FIXTURES.parent / "navigation/learned_after_run8.json"
+    before = evidence.read_bytes()
+    check = write_learned_check(tmp_path, image, layers, metadata, evidence, report["parameters"]["scale"])
+    assert check["retained_edges"] == 8 and max(p[1] for p in check["route"]) >= 146
+    assert (tmp_path / "ramp_overlay.png").exists() and evidence.read_bytes() == before
 
 
 def test_all_observed_fixes_are_directly_safe_and_every_walk_pair_plans(observations):
@@ -196,10 +211,10 @@ def test_observation_discs_stay_tiny_and_report_prior_false_blocks(generated):
     assert audit["before"]["walk_ne_fixes.json"]["unsafe"] == 267
     assert audit["before"]["visited.json"]["unsafe"] == 374
     assert audit["classifier"]["walk_ne_fixes.json"]["unsafe"] == 0
-    assert audit["classifier"]["visited.json"]["unsafe"] == 6
-    assert audit["opened_native_cells"] == int(layers["evidence"].sum()) == 18
-    assert audit["opened_map_area"] == 1.125
-    assert sum(d["opened_cells"] for d in audit["effective_discs"]) == 18
+    assert audit["classifier"]["visited.json"]["unsafe"] == 2
+    assert audit["opened_native_cells"] == int(layers["evidence"].sum()) == 2
+    assert audit["opened_map_area"] == 0.125
+    assert sum(d["opened_cells"] for d in audit["effective_discs"]) == 2
     centers = np.array([d["center"] for d in audit["effective_discs"]])*4
     for y, x in np.argwhere(layers["evidence"]):
         assert np.min(np.linalg.norm(centers-[x, y], axis=1)) <= 4
