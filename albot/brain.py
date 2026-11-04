@@ -106,6 +106,9 @@ class Context:
 
     def stop_travel(self) -> None:
         if self.travel_moving:
+            for behavior in self.behaviors:
+                if behavior.name == "travel" and behavior.task is not None:
+                    behavior.task.suspend_movement()  # combat/heal waits are not collision evidence
             # Called after safety checks (also from check_safety itself): do not
             # recurse through ctx.press. Input still enforces window focus.
             self.input.press(self.config.keys.stop)

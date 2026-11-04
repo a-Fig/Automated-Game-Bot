@@ -83,7 +83,7 @@ class LearnedEvidence:
         self.save()
         return True
 
-    def stall(self, player, target, clearance, length, now, road=None, fan=False):
+    def stall(self, player, target, clearance, length, now, road=None, fan=False, road_can_block=None):
         self._check(player)
         self._check(target)
         direction = np.asarray(target, float)-player
@@ -117,6 +117,12 @@ class LearnedEvidence:
             if not repeats:
                 self.road_stalls.append(edge)
                 self.stall_message = "first road stall: edge deferred until a second stall within 1.5px"
+                self.save()
+                return False
+            if road_can_block is not None and not road_can_block(edge):
+                edge["deferred_reason"] = "disconnects current goal; needs short road probe/manual review"
+                self.road_stalls.append(edge)
+                self.stall_message = "road edge deferred: disconnects goal; retry short road clicks before backtracking"
                 self.save()
                 return False
         self.edges.append(edge)

@@ -58,6 +58,8 @@ def fake_navigation(monkeypatch, steps):
             self.evidence = SimpleNamespace(edges=[])
         def note_walk(self, now):
             pass
+        def suspend_movement(self):
+            calls.append(("suspend",))
         def resume_after_backtrack(self, point, now, stalled_at):
             self.route = []
             calls.append(("resume", point))
@@ -110,8 +112,9 @@ def test_old_priority_list_inserts_travel_but_unsafe_combat_configuration_is_rej
 
 
 def test_travel_yields_to_close_mob_and_cancels_previous_walk(monkeypatch):
-    fake_navigation(monkeypatch, [])  # any navigator invocation would fail this test
+    calls = fake_navigation(monkeypatch, [])  # any navigator tick would fail this test
     w = travel_world()
+    seed_route(w)
     w.ctx.travel_moving = True
     mob = pred("mob", PLAYER[0]+60, PLAYER[1])
     see(w, [mob])
@@ -120,6 +123,7 @@ def test_travel_yields_to_close_mob_and_cancels_previous_walk(monkeypatch):
     assert ("click", round(mob.x), round(mob.y)) in w.input.actions
     assert w.brain.counts["fight_close"] == 1 and not w.ctx.travel_moving
     assert w.ctx.active_behavior == ""
+    assert ("suspend",) in calls  # time spent fighting cannot mature a terrain stall
 
 
 def test_combat_published_during_navigation_preempts_before_click(monkeypatch):

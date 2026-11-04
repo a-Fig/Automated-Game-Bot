@@ -214,6 +214,9 @@ class NavigationConfig:
     waypoint_tolerance: float = 2.0
     click_min: float = 250.0
     click_max: float = 400.0
+    precision_click_max: float = 150.0  # road and nearby-waypoint clicks; never extend past target
+    near_waypoint_distance: float = 3.0
+    road_retry_attempts: int = 2  # bounded short probes before backtracking at a disconnecting road stall
     safe_screen_rect: tuple[int, int, int, int] = (400, 200, 1800, 1100)
     stuck_seconds: float = 4.0
     progress_pixels: float = 0.8

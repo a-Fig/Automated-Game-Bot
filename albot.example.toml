@@ -184,6 +184,11 @@ arrival_tolerance = 3.0
 waypoint_tolerance = 2.0
 click_min = 250.0              # screen pixels from player_screen
 click_max = 400.0
+precision_click_max = 150.0    # on roads/near a waypoint; never extend beyond the projected target
+near_waypoint_distance = 3.0   # map pixels; shorter clicks before a corner
+road_retry_attempts = 2        # short retries before backtracking at a road edge that would cut the goal
+# New road edges still need two nearby stalls. A goal-disconnecting candidate
+# remains pending for review, not an active wall. Existing saved edges stay active.
 safe_screen_rect = [400, 200, 1800, 1100]  # excludes HUD; never clamp x/y independently
 stuck_seconds = 4.0            # no actual displacement; curved local paths count as progress
 progress_pixels = 0.8          # ignore subpixel arrow jitter

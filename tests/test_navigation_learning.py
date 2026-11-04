@@ -189,7 +189,7 @@ def run7_zone(tmp_path, count=8):
     return Zone.load("fractured_ground", cfg), cfg
 
 
-def test_run7_road_edge_is_deferred_then_confirmed_across_restart(tmp_path, caplog):
+def test_new_road_cut_stays_pending_across_restart_instead_of_closing_the_only_route(tmp_path, caplog):
     zone, cfg = run7_zone(tmp_path, 7)
     raw = json.loads((FIXTURES / "learned_run7_raw.json").read_text())
     position = Point(*raw["edges"][-1]["player"])
@@ -203,18 +203,21 @@ def test_run7_road_edge_is_deferred_then_confirmed_across_restart(tmp_path, capl
     saved = json.loads((zone.folder / "learned.json").read_text())
     assert len(saved["edges"]) == 7 and len(saved["road_stalls"]) == 1
 
-    # Run 8 repeated the same real cliff within 1.5px. It must be retained even
-    # though the old mask then has no alternative, rather than silently dropped.
+    # Under the run-15 policy a new cut of the only road remains recorded as
+    # pending evidence. Already-persisted run-8 cliffs are still authoritative
+    # (covered separately below); a repeated stall is not enough to close a road.
     repeat = json.loads((FIXTURES / "learned_after_run8.json").read_text())["edges"][-1]
     position = Point(*repeat["player"])
     nav = NavigateTo("portal:NE", Zone.load(zone.name, cfg), cfg, learn=True)
     nav.locator = SimpleNamespace(locate=lambda frame, now: Location(*position, None, 0.95))
     for now in range(5):
         step = nav.tick(None, now, moving=True)
-    assert step.status == "no_route" and "learned edge indices [7]" in step.message
-    assert "retained all edges" in caplog.text and "road discs opened 0 cells" in caplog.text
-    assert len(nav.evidence.edges) == 8
-    assert len(json.loads((zone.folder / "learned.json").read_text())["edges"]) == 8
+    assert step.status == "waiting" and "road edge deferred" in step.message
+    assert "would disconnect goal; retained pending" in caplog.text
+    assert nav._connected(nav.grid, position, nav.goal)
+    assert len(nav.evidence.edges) == 7 and len(nav.evidence.road_stalls) == 2
+    saved = json.loads((zone.folder / "learned.json").read_text())
+    assert len(saved["edges"]) == 7 and "disconnects current goal" in saved["road_stalls"][-1]["deferred_reason"]
 
 
 def test_load_keeps_real_cut_edges_and_reports_the_cut_without_rewriting_file(tmp_path):

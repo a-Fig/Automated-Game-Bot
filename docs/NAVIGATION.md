@@ -175,12 +175,17 @@ step = task.tick(frame, time.monotonic())
 ```
 
 An A* grid inflated by `clearance` avoids wall corners; line-of-sight simplification
-keeps only safe turns. The controller follows the next segment up to `lookahead`,
-clamps radial click length to 250-400 pixels and shortens the ray before entering
-the configured HUD-free rectangle's edge. It never clamps x and y independently.
-The minimum click radius can aim past a nearby waypoint; the dispatcher must
-recheck frames frequently and replace movement before overshooting a turn. This
-API does not claim that a single click's entire travel is safe to run open-loop.
+keeps only safe turns. Away from roads/corners the controller follows the next
+segment up to `lookahead`, using the legacy 250-400px radial range. On a road, or
+within `near_waypoint_distance = 3` map pixels of a waypoint, it uses at most
+`precision_click_max = 150` screen pixels with **no minimum extension**. A tiny
+projected delta stays tiny instead of becoming a 250px click past the waypoint.
+On roads it prefers a forward interior road cell within that short click, checking
+the entire short segment against both road and learned-safe masks. Road waypoints
+use at most 0.35px reach tolerance; no corner is skipped unless the next segment
+is clear. Every projection shortens the ray before the HUD-free rectangle's edge
+and preserves direction. Fresh-frame safety/combat checks still precede dispatch.
+Albion may bend its actual trajectory; this is not an open-loop path guarantee.
 
 Clearance inherits `zone.json` when omitted from `[navigation]`. Fractured Ground's
 Tab-derived mask uses 1.0 minimap pixel; zones without a value still use 2.0. An
@@ -198,8 +203,9 @@ waypoint. `max_replans` now limits retries **per spot** (`stuck_block_radius` gr
 nearby stalls), rather than sharing a small budget across the journey. The default
 is 8; an old explicit 3 still means 3 per spot. Lost fixes and pauses over two
 seconds do not count as stuck time. `side_step_seconds` is accepted for old TOMLs
-but unused. A learned edge that disconnects the goal is retained and reported as
-no_route. The controller first reapplies radius-1 observed standing discs near the
+but unused. Stopping travel for combat/healing also suspends both terrain timers,
+including short interruptions. A saved edge that disconnects the goal is retained
+and reported as no_route. The controller first reapplies radius-1 observed standing discs near the
 road; if still disconnected, the log identifies a minimal set of edge indices
 whose removal would restore the route. Those removals happen only in diagnostic
 copies, never in the task or JSON. Existing discs are normally already open, so
@@ -217,6 +223,24 @@ The failed direction receives a transverse edge with short wings at +/-45 degree
 the player; standing-position clearance protection still applies. Targets too close
 to place a safe barrier are recorded without blocking the player's own cell.
 The two-stall confirmation rule still applies if any part of a fan crosses a road.
+Before activating a **new** road-crossing edge, the controller checks whether it
+would disconnect the current player from the goal. If so it logs the conflict and
+keeps that candidate in `road_stalls` with `deferred_reason`/`deferred_goal`; the
+candidate is not applied as a wall. Road movement already uses short probes. After
+`road_retry_attempts = 2` failed probes at that spot, travel hands off to bounded
+breadcrumb backtracking rather than repeating indefinitely. A road edge with a
+valid alternative may still be activated after two stalls. Non-road edges retain
+their previous policy. Existing saved edges are never silently removed or crossed.
+
+Run 15's saved barrier is an example: at the time of inspection, index 19 was
+from `(255.66,136.08)` toward `(271.75,124.25)` with endpoints
+`(256.30,131.88)`–`(259.85,136.72)`. The copied local fixture reproduces its cut;
+removing it from that **copy** restores the road route. Short-click simulation
+from both the stall and best position stays on the road and reaches the approach.
+The 11:01:07/11:01:11 stalls occurred after the last logged fight at 11:00:42 and
+before the next HP-drop retreat at 11:01:27; the log alone cannot establish their
+physical cause. This change does not infer elevations or open the plateau north
+of the road. Road appearance and projection still need live validation.
 
 At the per-spot retry limit, or when learned cliffs leave no route, travel attempts
 to backtrack along its actual journey breadcrumbs. It sends guarded right-click

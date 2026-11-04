@@ -482,7 +482,7 @@ class ExitGuard:
         return True
 
 
-def screen_click(delta, config: NavigationConfig) -> Point | None:
+def screen_click(delta, config: NavigationConfig, *, precise=False, max_distance=None) -> Point | None:
     """Project a map delta into the HUD-free screen rectangle, preserving direction."""
     matrix = np.asarray(config.minimap_to_screen, float)
     if matrix.shape != (2, 2) or not np.isfinite(matrix).all() or abs(np.linalg.det(matrix)) < 1e-8:
@@ -498,15 +498,18 @@ def screen_click(delta, config: NavigationConfig) -> Point | None:
             and 0 <= y0 <= player[1] <= y1 < config.window_size[1]
             and 0 < config.click_min <= config.click_max):
         raise ValueError("invalid click limits or safe_screen_rect")
-    limit = config.click_max
+    minimum = 0 if precise else config.click_min
+    limit = min(config.click_max, max_distance) if max_distance is not None else config.click_max
+    if not math.isfinite(limit) or limit <= 0:
+        raise ValueError("invalid precision click limit")
     for p, d, lo, hi in zip(player, direction, (x0, y0), (x1, y1)):
         if d > 0:
             limit = min(limit, (hi-p)/d)
         elif d < 0:
             limit = min(limit, (lo-p)/d)
-    if limit < config.click_min:
+    if limit < minimum or limit <= 0:
         return None
-    distance = min(limit, max(config.click_min, length))
+    distance = min(limit, max(minimum, length))
     return Point(*(player + direction * distance))
 
 
@@ -536,7 +539,9 @@ class NavigateTo:
                 or self.config.map_speed_px_per_s <= 0 or self.config.stuck_block_radius < 1
                 or self.config.max_replans < 0 or not math.isfinite(self.config.learned_edge_length)
                 or self.config.learned_edge_length <= 0 or self.config.zero_motion_seconds <= 0
-                or self.config.zero_motion_pixels <= 0):
+                or self.config.zero_motion_pixels <= 0 or not math.isfinite(self.config.precision_click_max)
+                or self.config.precision_click_max <= 0 or not math.isfinite(self.config.near_waypoint_distance)
+                or self.config.near_waypoint_distance <= 0 or self.config.road_retry_attempts < 1):
             raise ValueError("invalid navigation timing, distances or recovery limits")
         self.zone = zone or Zone.load(self.config.zone, self.config)
         self.goal = self.zone.goal(goal)
@@ -560,6 +565,10 @@ class NavigateTo:
         self.no_route_reports = {}
         self.last_location = None
         self.zero_point, self.zero_at = None, None
+        self.road_disconnects = []
+        self.click_mode = ""
+        self.road_margin = (cv2.distanceTransform(self.zone.road.astype(np.uint8), cv2.DIST_L2, 5)
+                            if self.zone.road is not None else None)
 
     def note_walk(self, now):
         """Call after dispatch, never on a proposed click or a throttled re-click."""
@@ -576,11 +585,11 @@ class NavigateTo:
         self.progress_at, self.motion_anchor = now, point
         self.zero_point, self.zero_at = None, None
 
-    def _fresh_grid(self, edges=None):
+    def _fresh_grid(self, edges=None, protect=()):
         base = self.zone.base_grid or self.zone.grid
         grid = base.copy_with(self.config.clearance if self.config.clearance is not None
                              else self.zone.grid.clearance, self.config.snap_radius)
-        self.evidence.apply(grid, edges=edges)
+        self.evidence.apply(grid, edges=edges, protect=protect)
         for point, radius in self.hazards:
             grid.block(point, radius)
         return grid
@@ -686,6 +695,72 @@ class NavigateTo:
         cell = Point(round(point.x*scale)/scale, round(point.y*scale)/scale)
         return self.grid.line_clear(point, target) or self.grid.line_clear(cell, target)
 
+    def _on_road(self, point):
+        if self.zone.road is None:
+            return False
+        x, y = [round(v*self.grid.scale) for v in point]
+        return (0 <= y < self.zone.road.shape[0] and 0 <= x < self.zone.road.shape[1]
+                and bool(self.zone.road[y, x]) and self.grid.is_safe(point))
+
+    def _road_aim(self, point, target):
+        """A short, forward, road-interior waypoint, not a ray toward a far plateau.
+
+        Stay in the current learned safe grid. Road colour is only a steering
+        hint: this never opens terrain or crosses an existing learned edge.
+        Prefer the interior of the road within one short screen click; a broad
+        dilated road edge must not pull the cursor up the neighbouring cliff.
+        """
+        if not self._on_road(point):
+            return None
+        matrix = np.asarray(self.config.minimap_to_screen, float)
+        if matrix.shape != (2, 2) or not np.isfinite(matrix).all() or abs(np.linalg.det(matrix)) < 1e-8:
+            raise ValueError("minimap_to_screen must be a finite, nonsingular 2x2 matrix")
+        direction = np.asarray(target)-point
+        distance = float(np.linalg.norm(direction))
+        length = float(np.linalg.norm(matrix@direction))
+        if distance < 1e-9 or length < 1e-9:
+            return None
+        ideal = np.asarray(point)+direction*min(1, self.config.precision_click_max/length)
+        radius = min(self.config.near_waypoint_distance,
+                     self.config.precision_click_max/np.linalg.svd(matrix, compute_uv=False).min())
+        scale = self.grid.scale
+        x0, y0 = np.floor((np.asarray(point)-radius)*scale).astype(int)
+        x1, y1 = np.ceil((np.asarray(point)+radius)*scale).astype(int)
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(self.grid.mask.shape[1]-1, x1), min(self.grid.mask.shape[0]-1, y1)
+        mask = self.grid.safe[y0:y1+1, x0:x1+1] & self.zone.road[y0:y1+1, x0:x1+1]
+        if not mask.any():
+            return None
+        road_grid = WalkGrid(mask, clearance=0, snap_radius=0)
+        local_start = (point.x*scale-x0, point.y*scale-y0)
+        candidates = []
+        for y in range(y0, y1+1):
+            for x in range(x0, x1+1):
+                candidate = Point(x/scale, y/scale)
+                delta = np.asarray(candidate)-point
+                if (not road_grid.is_safe((x-x0, y-y0)) or np.dot(delta, direction) <= 0
+                        or candidate.dist(target) >= distance
+                        or np.linalg.norm(matrix@delta) > self.config.precision_click_max+1e-6
+                        or not road_grid.line_clear(local_start, (x-x0, y-y0))):
+                    continue
+                score = self.road_margin[y, x]/scale - 0.5*math.dist(candidate, ideal)
+                candidates.append((score, candidate))
+        if candidates:
+            return max(candidates, key=lambda item: item[0])[1]
+        local_ideal = (ideal[0]*scale-x0, ideal[1]*scale-y0)
+        return Point(*ideal) if road_grid.line_clear(local_start, local_ideal) else None
+
+    def _road_can_block(self, edge):
+        point = Point(*edge["player"])
+        trial = self._fresh_grid(edges=[*self.evidence.edges, edge], protect=(point,))
+        if self._connected(trial, point, self.goal):
+            return True
+        edge["deferred_goal"] = list(self.goal)
+        self.road_disconnects.append(point)
+        log.warning("navigation: road edge at %.2f,%.2f would disconnect goal; retained pending, "
+                    "not a hard wall; retrying <=%.0fpx road clicks", *point, self.config.precision_click_max)
+        return False
+
     def tick(self, frame, now: float, moving: bool = False) -> NavigationStep:
         if self.last_tick is not None and now < self.last_tick:
             raise ValueError("navigation timestamps must increase")
@@ -740,7 +815,10 @@ class NavigateTo:
         try:
             if not self.route:
                 self._plan(point, now)
-            while self.index < len(self.route) and point.dist(self.route[self.index]) <= self.config.waypoint_tolerance:
+            tolerance = (min(self.config.waypoint_tolerance, 0.35) if self._on_road(point)
+                         else self.config.waypoint_tolerance)
+            while (self.index < len(self.route) and point.dist(self.route[self.index]) <= tolerance
+                   and (self.index+1 == len(self.route) or self._clear_from(point, self.route[self.index+1]))):
                 self.index += 1
                 self.progress_at = now
             if self.index >= len(self.route):
@@ -755,6 +833,14 @@ class NavigateTo:
                 return NavigationStep("no_route", location, message="no clear segment from current position")
             target = self.route[self.index]
             distance = point.dist(target)
+            road_aim = self._road_aim(point, target)
+            on_road = self._on_road(point)
+            if road_aim is not None:
+                mode = "road"
+            elif on_road or distance <= self.config.near_waypoint_distance:
+                mode = "near"
+            else:
+                mode = "cruise"
             # Click-to-move bends around rocks. Actual displacement counts as
             # progress even when it temporarily moves away from the waypoint.
             if self.motion_anchor is None or point.dist(self.motion_anchor) >= self.config.progress_pixels:
@@ -766,14 +852,18 @@ class NavigateTo:
             zero_motion = self.zero_at is not None and now-self.zero_at >= self.config.zero_motion_seconds
             if zero_motion or now-self.progress_at >= self.config.stuck_seconds:
                 attempts = sum(point.dist(old) <= self.config.stuck_block_radius for old in self.stalls)
-                if attempts >= self.config.max_replans:
+                protected_road = any(point.dist(old) <= self.config.stuck_block_radius for old in self.road_disconnects)
+                limit = (min(self.config.max_replans, self.config.road_retry_attempts) if protected_road
+                         else self.config.max_replans)
+                if attempts >= limit:
                     self.failed = True
                     self.failed_point = point
                     return NavigationStep("stalled", location, waypoints=tuple(self.route))
                 self.stalls.append(point)
                 self.replans += 1
                 blocked = self.evidence.stall(point, target, self.grid.clearance, self.config.learned_edge_length,
-                                              now, road=self.zone.road, fan=zero_motion)
+                                              now, road=self.zone.road, fan=zero_motion,
+                                              road_can_block=self._road_can_block)
                 self.grid = self._fresh_grid()
                 log.warning("navigation: stall at %.2f,%.2f toward %.2f,%.2f; edge=%s fan=%s; replan %d at spot",
                             point.x, point.y, target.x, target.y, blocked, zero_motion, attempts+1)
@@ -782,9 +872,21 @@ class NavigateTo:
                 # alternative route through the normal guarded dispatch path.
                 return NavigationStep("waiting", location, waypoints=tuple(self.route),
                                       message=self.evidence.stall_message)
-            click = screen_click(delta, self.config)
+            if road_aim is not None:
+                delta = Point(road_aim.x-point.x, road_aim.y-point.y)
+            elif on_road and self._on_road(target):
+                return NavigationStep("unsafe_click", location, waypoints=tuple(self.route),
+                                      message="no clear short road waypoint; no click")
+            click = screen_click(delta, self.config, precise=mode != "cruise",
+                                 max_distance=self.config.precision_click_max if mode != "cruise" else None)
+            if mode != self.click_mode:
+                log.info("navigation: %s clicks%s at %.2f,%.2f toward %.2f,%.2f", mode,
+                         f" <= {self.config.precision_click_max:.0f}px" if mode != "cruise" else "",
+                         *point, *(road_aim or target))
+                self.click_mode = mode
+            log.debug("navigation: %s target=%s aim=%s click=%s", mode, target, road_aim or target, click)
             return NavigationStep("move" if click is not None else "unsafe_click", location,
-                                  click, tuple(self.route))
+                                  click, tuple(self.route), f"{mode} click")
         except ValueError as e:
             return NavigationStep("no_route", location, waypoints=tuple(self.route), message=str(e))
 
