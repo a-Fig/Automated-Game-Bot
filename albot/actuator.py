@@ -12,6 +12,8 @@ import logging
 from dataclasses import dataclass, field
 
 from .geometry import Point
+from .hud import hud_reason
+from .safety import SafetyStop
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class Input:
     def __init__(self, window, config) -> None:
         self.window = window
         self.keys = config.keys
+        self.safety = config.safety
 
     def _check_focus(self) -> None:
         if not self.window.is_active():
@@ -55,6 +58,25 @@ class Input:
     def click(self, p: Point, stop: bool = True) -> None:
         """Stop, move to p, left click: what helper.clickOn did. Travel skips the stop."""
         self._check_focus()
+        self._check_world(p)
+        self._left_click(p, stop)
+
+    def _check_world(self, p):
+        rect = self.window.rect()
+        reason = hud_reason(p, (rect.width, rect.height), self.safety)
+        if reason:
+            log.info("world click/aim refused at %.0f,%.0f: %s", p.x, p.y, reason)
+            raise SafetyStop()
+
+    def toggle_minimap(self):
+        """The only UI click: fixed configured button, never an arbitrary world target."""
+        self._check_focus()
+        rect = self.window.rect()
+        x, y = self.safety.minimap_toggle
+        w, h = self.safety.hud_size
+        self._left_click(Point(x*rect.width/w, y*rect.height/h), stop=False)
+
+    def _left_click(self, p, stop):
         import keyboard
         import pyautogui
         try:
@@ -67,6 +89,7 @@ class Input:
 
     def walk_to(self, p: Point) -> None:
         self._check_focus()
+        self._check_world(p)
         import pyautogui
         try:
             pyautogui.moveTo(*self._to_screen(p), duration=0.2)
@@ -77,6 +100,7 @@ class Input:
     def move_to(self, p: Point) -> None:
         """Aim a directional spell without clicking or stopping movement."""
         self._check_focus()
+        self._check_world(p)
         import pyautogui
         try:
             pyautogui.moveTo(*self._to_screen(p), duration=0.2)
@@ -88,6 +112,10 @@ class Input:
 class DryRunInput:
     """Logs what would be pressed and clicked, and sends nothing. For testing."""
     actions: list[tuple] = field(default_factory=list)
+
+    def toggle_minimap(self) -> None:
+        self.actions.append(("minimap_toggle",))
+        log.info("[dry run] toggle minimap")
 
     def release(self) -> None:
         self.actions.append(("release",))

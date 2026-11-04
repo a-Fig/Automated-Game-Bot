@@ -22,6 +22,7 @@ from .state import Detection, Scene, Status
 from .resources import ResourceMemory
 from .safety import DeathGuard, SafetyStop, TravelGuard, ZoneGuard
 from .navigation import ExitGuard
+from .hud import MinimapRecovery, hud_reason
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class Context:
         self._worker_zone_guard = getattr(workers, "zone_guard", None)
         self.zone_guard = self._worker_zone_guard or ZoneGuard(config)
         self.exit_guard = ExitGuard(config.navigation)
+        self.minimap_recovery = MinimapRecovery(config)
         self.travel_moving = False
         self.travel_retreating = False
         self.active_behavior = ""
@@ -119,6 +121,22 @@ class Context:
         return self.clock.now()
 
     # waiting -----------------------------------------------------------------
+    def _latch_stop(self, reason):
+        self.quit.set()
+        self.travel_moving = self.travel_retreating = False
+        self.resources.clear()
+        log.critical("%s; stopping run, restart required", reason)
+        try:
+            if self.window.is_active():
+                self.input.press(self.config.keys.stop)
+        except Exception:
+            log.exception("%s: stop key failed; run remains stopped", reason)
+        try:
+            self.input.release()
+        except Exception:
+            log.exception("%s: input release failed; run remains stopped", reason)
+        raise SafetyStop()
+
     def check_safety(self) -> None:
         if self.quit.is_set():
             raise SafetyStop()
@@ -126,20 +144,7 @@ class Context:
         zone_reason = (self.zone_guard.reason if self._worker_zone_guard is not None
                        else self.zone_guard.observe(status, self.now()))
         if zone_reason:
-            self.quit.set()  # latch before cleanup; a restored HUD must never resume this run
-            self.travel_moving = self.travel_retreating = False
-            self.resources.clear()
-            log.critical("zone changed: %s; stopping run, restart required", zone_reason)
-            try:
-                if self.window.is_active():
-                    self.input.press(self.config.keys.stop)  # also cancel farming/chase click-to-move
-            except Exception:
-                log.exception("zone changed: stop key failed; run remains stopped")
-            try:
-                self.input.release()
-            except Exception:
-                log.exception("zone changed: input release failed; run remains stopped")
-            raise SafetyStop()
+            self._latch_stop("zone changed: "+zone_reason)
         if (self.travel_guard.critical_since is not None and status is not None
                 and status.health_fraction is not None
                 and status.health_fraction > self.config.safety.zero_health):
@@ -191,6 +196,26 @@ class Context:
             if travelling and not self.death_guard.dead:
                 self.stop_travel()
             raise SafetyStop()
+        recovery = self.minimap_recovery
+        if not self.window.is_active():
+            recovery.missing_at = None
+        elif recovery.observe(status, self.now()):
+            # This one named UI action bypasses the world HUD/exit guards. Stop
+            # walking first; unwinding prevents the interrupted farm/cast using
+            # its now-stale cursor target immediately after the UI click.
+            self.input.press(self.config.keys.stop)
+            self.travel_moving = self.travel_retreating = False
+            if self.scene() is not None:
+                self.resources.move(self.scene(), None)
+            # Reserve the interval before dispatch: an input exception after an
+            # uncertain click must not cause an immediate second toggle.
+            recovery.toggled(self.now())
+            self.input.toggle_minimap()
+            log.warning("minimap hidden; toggled (%d/%d)", recovery.attempts,
+                        self.config.safety.minimap_toggle_attempts)
+            raise SafetyStop()
+        if recovery.reason:
+            self._latch_stop(recovery.reason)
         if self.travel_guard.observe(status, self.now(), travelling,
                                      self.active_behavior in ("fight_close", "fight_far")):
             log.warning("under attack while travelling: HP fell more than %.0f%% within %.1fs",
@@ -242,6 +267,9 @@ class Context:
 
     # acting --------------------------------------------------------------------
     def movement_allowed(self, point):
+        rect = self.window.rect()
+        if hud_reason(point, (rect.width, rect.height), self.config.safety):
+            return False
         status = self.status()
         if status is None:
             return True
@@ -249,6 +277,11 @@ class Context:
         return self.exit_guard.allowed(status.frame, status.timestamp, self.now(), point, goal)
 
     def _guard_movement(self, point):
+        rect = self.window.rect()
+        reason = hud_reason(point, (rect.width, rect.height), self.config.safety)
+        if reason:
+            log.info("world click/aim refused at %.0f,%.0f: %s", point.x, point.y, reason)
+            raise SafetyStop()
         if not self.movement_allowed(point):
             log.warning("movement refused near %s", self.exit_guard.reason)
             self.travel_moving = self.travel_retreating = False

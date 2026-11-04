@@ -178,6 +178,7 @@ def test_real_release_uses_only_key_up_and_mouse_up_with_fake_devices(monkeypatc
 
 def exit_world(point):
     w = World(zone_guard=True)
+    w.window = w.ctx.window = FixedWindow(2240, 1400)
     scene = build_scene(w.clock.now(), (2240, 1400), [pred("player", *PLAYER)], [], w.config)
     w.workers.scenes.publish(scene)
     w.status(frame=world_frame())
@@ -240,9 +241,10 @@ def test_missing_fix_skips_exit_check_and_wrong_size_warns_once(caplog):
 
 def test_zone_label_guard_still_stops_on_an_unsupported_exit_projection_size():
     w = World(zone_guard=True)
+    w.window = w.ctx.window = FixedWindow(1120, 700)
     small = cv2.resize(world_frame(), (1120, 700), interpolation=cv2.INTER_NEAREST)
     w.status(frame=small)
-    assert w.ctx.movement_allowed(PLAYER)  # projection skipped, not guessed
+    assert w.ctx.movement_allowed(Point(562, 280))  # projection skipped, not guessed
     w.ctx.check_safety()
     changed = cv2.resize(world_frame(132), (1120, 700), interpolation=cv2.INTER_NEAREST)
     for _ in range(2):

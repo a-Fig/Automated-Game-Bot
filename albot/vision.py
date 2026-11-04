@@ -13,6 +13,7 @@ from .spells import SpellSlotMapper
 from .state import Detection, Scene, Status
 from .safety import ZoneGuard
 from .window import Rect
+from .hud import hud_reason
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +165,7 @@ def build_scene(timestamp: float, size: tuple[int, int], predictions: Sequence,
                 obstacle_predictions: Sequence, config: Config,
                 capture_ms: float = 0.0, inference_ms: float = 0.0, frame: Any = None) -> Scene:
     d = config.detection
+    predictions = [p for p in predictions if not hud_reason(Point(p.x, p.y), size, config.safety)]
     player, detected = choose_player(predictions, config, size)
     groups: dict[str, list[Detection]] = {"mob": [], "threat": [], "farm": [], "pickup": [], "wisp": []}
     by_class = {}

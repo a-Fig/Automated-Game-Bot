@@ -48,6 +48,24 @@ uncalibrated travel. A different window/crop skips projection with one WARNING.
 No trusted minimap fix also skips this check, as requested. Exit buffers remain
 approximate: Albion's local pathfinding can bend away from the intended segment.
 
+World targets also exclude `[safety] hud_rects`, scaled from `hud_size = [2240,1400]`.
+The minimap/buttons, label/clock, portrait/buffs, menus and ability bar are excluded
+before grouping model detections and again before any world click or spell aim.
+Refusals log INFO; wandering samples another direction.
+
+`minimap_recovery = true` checks the small panel crop without models. With readable
+numeric health, five seconds of fresh frames without an arrow fix **and** without
+the tan diamond frame propose one click on `minimap_toggle = [2197,1290]`, scaled
+from `hud_size`. Visible parchment, weak frame evidence or a flat/black crop vetoes the click.
+The input path stops movement, sends only this named UI action, logs WARNING
+`minimap hidden; toggled`, and unwinds the interrupted behavior. Attempts are at
+least 60 seconds apart, including after a recovered fix. If still hidden five
+seconds after the third attempt, it cancels movement, releases input and latches
+a run stop until restart. A restored arrow resets the failure count. Timing,
+attempt count and panel/button coordinates are configurable in the example.
+The frame geometry is calibrated on the two run-13 crops; other UI layouts need
+new fixtures/calibration, even though the rectangles scale with window size.
+
 ## Preview a route
 
 From the repo, using the pinned venv (substitute its full Python path if needed):

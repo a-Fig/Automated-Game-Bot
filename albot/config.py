@@ -123,6 +123,7 @@ class BehaviorConfig:
     stuck_radius: float = 40.0
     blacklist_seconds: float = 15.0
     resource_blacklist_seconds: float = 180.0
+    resource_blacklist_durations: list[float] | None = None  # omitted: [legacy seconds, 600, 1800]
     resource_blacklist_radius: float = 60.0
     # detours around obstacles when a target's straight line is blocked
     detours: bool = True
@@ -157,6 +158,17 @@ class HealthConfig:
 
 @dataclass
 class SafetyConfig:
+    hud_size: tuple[int, int] = (2240, 1400)
+    hud_rects: list[tuple[int, int, int, int]] = field(default_factory=lambda: [
+        (1820, 1030, 2240, 1400), (1880, 1340, 2240, 1400), (0, 0, 520, 200),
+        (1660, 0, 2240, 90), (2140, 80, 2240, 260), (680, 1300, 1580, 1400),
+    ])
+    minimap_recovery: bool = True
+    minimap_panel_rect: tuple[int, int, int, int] = (1820, 1030, 2240, 1400)
+    minimap_toggle: tuple[int, int] = (2197, 1290)
+    minimap_missing_seconds: float = 5.0
+    minimap_toggle_interval: float = 60.0
+    minimap_toggle_attempts: int = 3
     zone_guard: bool = True
     zone_label_rect: tuple[int, int, int, int] = (2008, 1352, 2146, 1376)  # excludes player count and clock
     zone_label_size: tuple[int, int] = (2240, 1400)  # calibration size; rect scales with captures
@@ -277,9 +289,12 @@ def _build(cls, data: dict[str, Any], path: str):
             value = [CastStep(**v) for v in value]
         elif name == "fallback":
             value = CastStep(**value)
+        elif name == "hud_rects":
+            value = [tuple(rect) for rect in value]
         elif isinstance(value, list) and name in ("player_offset", "window_size", "bar", "energy_bar", "gather_bar",
                                                   "minimap_rect", "player_screen", "safe_screen_rect",
-                                                  "zone_label_rect", "zone_label_size"):
+                                                  "zone_label_rect", "zone_label_size", "hud_size",
+                                                  "minimap_panel_rect", "minimap_toggle"):
             value = tuple(value)
         kwargs[name] = value
     return cls(**kwargs)

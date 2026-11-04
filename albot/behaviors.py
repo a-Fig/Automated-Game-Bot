@@ -22,6 +22,7 @@ from typing import Optional, Sequence
 
 from .geometry import Point, find_detour
 from .state import Detection, Scene, Status
+from .hud import hud_reason
 
 log = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ class Heal(Behavior):
             p = Point(scene.player.x + math.cos(a) * config.combat.escape_distance,
                       scene.player.y + math.sin(a) * config.combat.escape_distance)
             if (0 <= p.x < scene.window_size[0] and 0 <= p.y < scene.window_size[1]
-                    and scene.reachable(p)):
+                    and not hud_reason(p, scene.window_size, config.safety) and scene.reachable(p)):
                 return p
         return None
 
@@ -585,6 +586,7 @@ class Farm(Behavior):
                 log.info("farm %s: still gathering after %.0f s", plan.target.class_name, b.farm_max_seconds)
                 ctx.resources.failure(plan.target.class_name, spot)
                 return False
+            ctx.resources.success(plan.target.class_name, spot)
             ctx.wait_for_new_scene()
             return True
         finally:

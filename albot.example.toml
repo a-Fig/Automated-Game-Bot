@@ -87,8 +87,11 @@ lost_seconds = 3.0         # nothing detected: esc after this, pause after twice
 stuck_repeats = 3          # failing at one spot this many times in a row...
 stuck_radius = 40.0
 blacklist_seconds = 15.0   # ...skips it for this long
-resource_blacklist_seconds = 180.0  # one failed gather skips that approximate world spot
+resource_blacklist_seconds = 180.0  # legacy first duration, used when durations below is omitted
+# resource_blacklist_durations = [180.0, 600.0, 1800.0] # optional override; last duration repeats
 resource_blacklist_radius = 60.0    # pixel tolerance for movement-estimation drift
+# Counts survive expiry, reset on a completed gather of the same class nearby.
+# Session-only approximate world history; death/dash clears it because coordinates drift.
 detours = true             # path around obstacles instead of skipping blocked targets
 detour_margin = 25.0
 walk_speed_px_per_s = 250.0   # a guess; tune by watching a detour walk
@@ -119,6 +122,23 @@ gather_bar_min_pixels = 30
 gather_bar_model = false
 
 [safety]
+# World click/aim exclusions, scaled proportionally from hud_size. Detections in
+# these rectangles are discarded too; the minimap recovery button is the only UI exception.
+hud_size = [2240, 1400]
+hud_rects = [
+    [1820, 1030, 2240, 1400], # minimap and its buttons
+    [1880, 1340, 2240, 1400], # zone name/count/clock
+    [0, 0, 520, 200],        # portrait and buffs
+    [1660, 0, 2240, 90],     # top-right menus
+    [2140, 80, 2240, 260],   # right-edge icons
+    [680, 1300, 1580, 1400], # abilities
+]
+minimap_recovery = true
+minimap_panel_rect = [1820, 1030, 2240, 1400] # crop includes the parchment diamond frame
+minimap_toggle = [2197, 1290] # fixed UI button; scales with hud_size
+minimap_missing_seconds = 5.0 # fresh readable health, missing fix AND missing parchment frame
+minimap_toggle_interval = 60.0 # at most one attempt per interval, including after recovery
+minimap_toggle_attempts = 3  # still hidden after this many toggles: latched safety stop
 zone_guard = true         # zone-name change/loading latches a full-run stop; restart required
 zone_label_rect = [2008, 1352, 2146, 1376] # zone name only; excludes player count and clock
 zone_label_size = [2240, 1400] # scale rect proportionally for other capture sizes
