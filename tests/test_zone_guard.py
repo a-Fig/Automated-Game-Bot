@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 from types import SimpleNamespace
 
 import cv2
@@ -26,7 +27,7 @@ PLAYER = Point(1125, 560)
 
 def world_frame(label=100):
     image = np.full((1400, 2240, 3), 80, np.uint8)
-    image[1365:1395, 1960:2160] = label
+    image[1352:1376, 2008:2146] = label
     image[56:68, 105:245] = (25, 30, 180)
     image[72:80, 105:245] = (180, 30, 25)
     return image
@@ -40,11 +41,49 @@ def test_zone_label_change_holds_for_two_seconds_then_latches():
     guard = ZoneGuard(Config())
     frame = world_frame()
     assert not guard.observe(reading(frame, 0), 0)
-    frame[1365:1395, 1960:2160] = 132  # mutate source: startup crop must be a copy
+    frame[1352:1376, 2008:2146] = 132  # mutate source: startup crop must be a copy
     assert not guard.observe(reading(frame, 1), 1)
     assert not guard.observe(reading(frame, 2), 2)
     assert "zone label difference 32.0" in guard.observe(reading(frame, 3.1), 3.1)
     assert guard.observe(reading(world_frame(), 4), 4)  # restored label cannot clear the latch
+
+
+def test_recorded_zone_labels_ignore_world_count_and_clock_but_detect_vixen_tor():
+    folder = Path(__file__).parent / "fixtures/zone"
+    fg, vt = [cv2.imread(str(folder / name)) for name in ("label_fg.png", "label_vt.png")]
+    assert fg.shape == vt.shape == (24, 138, 3)
+    cfg = Config()
+    assert cfg.safety.zone_label_rect == (2008, 1352, 2146, 1376)
+    x0, y0, x1, y1 = cfg.safety.zone_label_rect
+    reference = np.full((1400, 2240, 3), 80, np.uint8)
+    reference[y0:y1, x0:x1] = fg
+    moving = np.full(reference.shape, 200, np.uint8)
+    moving[y0:y1, x0:x1] = fg
+    moving[y0:y1, 1980:x0] = 0  # changing player count, just outside the name
+    moving[y0:y1, x1:2200] = 255  # changing clock
+    same = np.abs(reference[y0:y1, x0:x1].astype(float)-moving[y0:y1, x0:x1]).mean()
+    cross = np.abs(fg.astype(float)-vt.astype(float)).mean()
+    assert same < 5 and cross > 15
+    # The old strip sees changing world pixels and fails this same-zone case.
+    assert np.abs(reference[1365:1395, 1960:2160].astype(float)-moving[1365:1395, 1960:2160]).mean() > 15
+    guard = ZoneGuard(cfg)
+    assert not guard.observe(reading(reference, 0), 0)
+    for at in (1, 2, 3):
+        assert not guard.observe(reading(moving, at), at)
+    moving[y0:y1, x0:x1] = vt
+    for at in (4, 5):
+        assert not guard.observe(reading(moving, at), at)
+    assert "zone label difference 22.7" in guard.observe(reading(moving, 6.1), 6.1)
+
+
+def test_zone_label_debug_diff_is_logged_about_every_thirty_seconds(caplog):
+    guard = ZoneGuard(Config())
+    with caplog.at_level("DEBUG", logger="albot.safety"):
+        assert not guard.observe(reading(world_frame(), 0), 0)
+        for at in (1, 29.9, 30, 30.1, 59.9, 60):
+            assert not guard.observe(reading(world_frame(103), at), at)
+    samples = [r.message for r in caplog.records if "zone label diff=" in r.message]
+    assert samples == ["zone label diff=3.0 threshold=15.0"]*2
 
 
 def test_zone_guard_ignores_noise_transients_and_stale_samples():

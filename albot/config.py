@@ -158,7 +158,7 @@ class HealthConfig:
 @dataclass
 class SafetyConfig:
     zone_guard: bool = True
-    zone_label_rect: tuple[int, int, int, int] = (1960, 1365, 2160, 1395)
+    zone_label_rect: tuple[int, int, int, int] = (2008, 1352, 2146, 1376)  # excludes player count and clock
     zone_label_size: tuple[int, int] = (2240, 1400)  # calibration size; rect scales with captures
     zone_label_threshold: float = 15.0
     zone_label_seconds: float = 2.0

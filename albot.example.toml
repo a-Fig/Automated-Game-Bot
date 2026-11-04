@@ -120,7 +120,7 @@ gather_bar_model = false
 
 [safety]
 zone_guard = true         # zone-name change/loading latches a full-run stop; restart required
-zone_label_rect = [1960, 1365, 2160, 1395] # window-relative strip at zone_label_size
+zone_label_rect = [2008, 1352, 2146, 1376] # zone name only; excludes player count and clock
 zone_label_size = [2240, 1400] # scale rect proportionally for other capture sizes
 zone_label_threshold = 15.0 # mean absolute RGB difference; same-zone noise was ~3, crossing ~32
 zone_label_seconds = 2.0   # continuous change on fresh captures before stopping

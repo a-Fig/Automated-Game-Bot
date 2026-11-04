@@ -10,13 +10,15 @@ path tolerances use minimap-crop pixels, not full-frame or physical world units.
 
 The normal bot loop protects farming, chasing and travel with `[safety] zone_guard
 = true`. At startup it keeps a copy of the first non-black zone-name strip in
-memory. `zone_label_rect = [1960,1365,2160,1395]` is calibrated at
+memory. `zone_label_rect = [2008,1352,2146,1376]` excludes the changing player count
+and clock and is calibrated at
 `zone_label_size = [2240,1400]` and scales with capture dimensions. A mean absolute
 RGB difference over `zone_label_threshold = 15` for `zone_label_seconds = 2` on
 fresh captures latches a stop. A whole-frame mean below `zone_loading_mean = 15`
 stops immediately, including at startup. This is visual change detection, not OCR;
 start in the intended zone with its HUD visible. It cannot identify a wrong zone
 that was already present when the process started.
+The current label difference is logged at DEBUG about every 30 seconds.
 
 The status capture checks loading before running models and retains the latch
 even if Latest has since published another frame. Context logs CRITICAL

@@ -1,11 +1,14 @@
 """Death episodes and journey damage/retreat guards, driven by fresh HUD readings."""
 from __future__ import annotations
 
+import logging
 import math
 from collections import deque
 
 import cv2
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 
 class SafetyStop(Exception):
@@ -24,6 +27,7 @@ class ZoneGuard:
             raise ValueError("invalid zone guard rectangle or thresholds")
         self.reference = None
         self.changed_at = self.timestamp = None
+        self.debug_at = None
         self.reason = ""  # written last; the decision thread only reads worker-owned state
 
     def observe(self, status, now):
@@ -62,8 +66,12 @@ class ZoneGuard:
         crop = cv2.resize(crop, (x1-x0, y1-y0), interpolation=cv2.INTER_AREA).astype(np.float32)
         if self.reference is None:
             self.reference = crop.copy()
+            self.debug_at = status.timestamp
             return ""
         difference = float(np.abs(crop-self.reference).mean())
+        if status.timestamp-self.debug_at >= 30:
+            log.debug("zone label diff=%.1f threshold=%.1f", difference, self.s.zone_label_threshold)
+            self.debug_at = status.timestamp
         if difference > self.s.zone_label_threshold:
             if self.changed_at is None:
                 self.changed_at = status.timestamp
