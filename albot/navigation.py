@@ -408,7 +408,22 @@ class NavigateTo:
         if point.dist(self.goal) <= self.config.arrival_tolerance:
             return NavigationStep("arrived", location, waypoints=tuple(self.route))
         if not self.grid.is_safe(point):
-            return NavigationStep("no_route", location, message="player outside clear mask; calibrate mask/clearance")
+            # Seen live on 2026-11-04: the character drifted a pixel off a thin
+            # corridor and every later tick returned no_route. Walk back to the
+            # nearest clear cell instead, then plan a fresh route from there.
+            # Only for small drifts: a far "nearest" cell could be across a wall.
+            try:
+                cell = self.grid.snap(point)
+            except ValueError:
+                cell = None
+            if cell is None or point.dist(Point(*cell)) > self.config.clearance + 2:
+                return NavigationStep("no_route", location, message="player outside clear mask; calibrate mask/clearance")
+            self.route = []
+            if not self.config.calibrated and not self.allow_uncalibrated:
+                return NavigationStep("uncalibrated", location)
+            click = screen_click(Point(cell[0]-point.x, cell[1]-point.y), self.config)
+            return NavigationStep("move" if click is not None else "unsafe_click", location, click,
+                                  message="outside clear mask; returning to nearest clear cell")
         if self.failed:
             return NavigationStep("stalled", location, message="replan limit reached; no click")
         if self.progress_at is None or gap > 2:
@@ -449,7 +464,12 @@ class NavigateTo:
                 if self.replans >= self.config.max_replans:
                     self.failed = True
                     return NavigationStep("stalled", location, waypoints=tuple(self.route))
-                self.stuck_point = Point(point.x+delta.x, point.y+delta.y)
+                # Block far enough ahead that the blocked circle plus clearance
+                # can't cover the player's own cell (seen live: a waypoint 2 px
+                # ahead got blocked, and every later tick was no_route).
+                reach = self.config.stuck_block_radius + self.config.clearance + 1
+                ahead = max(1.0, reach / max(math.hypot(delta.x, delta.y), 1e-9))
+                self.stuck_point = Point(point.x+delta.x*ahead, point.y+delta.y*ahead)
                 self.side_step_at = now
                 for sign in (1, -1):
                     side = Point(-delta.y*sign, delta.x*sign)

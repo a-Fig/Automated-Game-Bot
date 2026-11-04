@@ -100,6 +100,7 @@ class BehaviorConfig:
     ])
     disabled: list[str] = field(default_factory=list)
     travel_goal: str = ""  # empty disables travel; otherwise portal:NE or map x,y
+    travel_give_up_seconds: float = 30.0  # no move for this long clears the goal; 0 never gives up
     eat_every_minutes: float = 30.0
     eat_wait: float = 2.0
     pickup_wait: float = 2.0

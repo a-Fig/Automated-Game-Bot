@@ -207,6 +207,7 @@ class Travel(Behavior):
         self.retreat_episode = None
         self.retreat_index = -1
         self.last_dash_at = -math.inf
+        self.moved_at = None
 
     def plan(self, ctx, scene, status):
         goal = ctx.config.behavior.travel_goal
@@ -267,6 +268,20 @@ class Travel(Behavior):
             ctx.travel_moving = False
             self.task, self.goal = None, ""
             return True  # arrival sends no input and does not fall through to farming
+        give_up = ctx.config.behavior.travel_give_up_seconds
+        if step.click is not None and step.status in ("move", "sidestep"):
+            self.moved_at = ctx.now()
+        elif self.moved_at is None:
+            self.moved_at = ctx.now()
+        elif give_up > 0 and ctx.now()-self.moved_at >= give_up:
+            # A journey that can't move must not hold the bot still forever
+            # (2026-11-04: 15 minutes of no_route before anyone noticed).
+            log.error("travel gave up on %s: no move for %.0fs (%s: %s)",
+                      goal, give_up, step.status, step.message)
+            ctx.config.behavior.travel_goal = ""
+            ctx.stop_travel()
+            self.task, self.goal, self.moved_at = None, "", None
+            return True
         if step.click is not None and step.status in ("move", "sidestep"):
             ctx.click(step.click)
             ctx.travel_moving = True
@@ -287,6 +302,7 @@ class Travel(Behavior):
         self.goal, self.timestamp = goal, None
         self.trail, self.attack_spots, self.blocked_spots = [], [], []
         self.retreat_episode = None
+        self.moved_at = None
 
     def _retreat(self, ctx):
         from .navigation import screen_click

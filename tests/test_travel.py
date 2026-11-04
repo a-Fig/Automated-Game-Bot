@@ -548,3 +548,19 @@ def test_stale_enemy_detections_do_not_block_escape_from_fresh_minimap(monkeypat
     w.tick()
     assert w.ctx.retreat_required()
     assert any(a[0] == "click" and a[1] < PLAYER[0] for a in w.input.actions)
+
+
+def test_travel_gives_up_after_no_move_so_the_bot_is_not_held_still(monkeypatch, caplog):
+    stuck = NavigationStep("no_route", message="player outside clear mask")
+    fake_navigation(monkeypatch, [stuck] * 50)
+    w = travel_world()
+    w.config.behavior.travel_give_up_seconds = 5.0
+    for _ in range(40):
+        see(w)
+        w.tick()
+        if not w.config.behavior.travel_goal:
+            break
+        w.clock.sleep(0.5)
+    assert w.config.behavior.travel_goal == ""
+    assert not any(a[0] == "click" for a in w.input.actions)
+    assert "travel gave up" in caplog.text

@@ -350,3 +350,23 @@ def test_live_probe_routine_with_fake_capture_clock_and_input_only(tmp_path, mon
     assert len(clicks) == 1 and clicks[0] == Point(1475, 560)
     assert sample["map_delta"][0] == pytest.approx(6)
     assert sample["screen_delta"] == [350, 0] and sample["duration"] > 0
+
+
+def test_player_just_off_clear_mask_walks_back_to_nearest_clear_cell():
+    nav = task()
+    nav.grid.block((235, 145), 1)  # off by a pixel or two, as seen live
+    assert not nav.grid.is_safe((235, 145))
+    step = nav.tick(frame_at(), 0)
+    assert step.status == "move" and step.click is not None
+    assert "nearest clear cell" in step.message and not nav.route
+
+
+def test_stuck_block_never_covers_the_players_own_cell():
+    cfg = NavigationConfig()
+    cfg.lookahead = 1.0  # the next waypoint is close, as it was live
+    nav = task(cfg)
+    for t in range(5):
+        nav.tick(frame_at(), t)
+    assert nav.side_step_at is not None
+    step = nav.tick(frame_at(), 6)  # sidestep wait over: block the stuck point, replan
+    assert nav.grid.is_safe(step.location.point) and step.status == "move"

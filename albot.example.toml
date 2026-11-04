@@ -66,6 +66,7 @@ heal_settle = 5.0
 priority = ["shield", "heal", "fight_close", "travel", "pickup", "farm", "fight_far", "eat", "wander"]
 disabled = []              # e.g. ["farm"] to only fight
 travel_goal = ""           # empty = off; e.g. "portal:NE" or "250,180" (minimap pixels)
+travel_give_up_seconds = 30.0  # no move for this long clears the goal; 0 = never give up
 # Travel needs navigation.calibrated=true and yields to shield/heal/fight_close.
 # Critical HP or an unseen attacker activates retreat before ordinary combat plans.
 # Arrival clears this value in memory only; restart reuses the file's goal.
